@@ -24,17 +24,103 @@ from engine.compatibility import check_version_in_range, parse_version_tuple
 
 log = logging.getLogger(__name__)
 
+DEFAULT_LLM_URL = "http://127.0.0.1:8080/v1/chat/completions"
 
-def load_testops_policy(path: str | None = None) -> str:
-    """Load TestOps Confluence policy markdown."""
-    policy_path = path or os.path.join(os.getcwd(), "data", "testops_confluence_policy.md")
-    if os.path.exists(policy_path):
+
+def query_local_llm(
+    prompt: str,
+    llm_url: str | None = None,
+    model_name: str | None = None,
+    timeout: int = 90,
+) -> str | None:
+    """Query OpenAI-compatible local LLM endpoint (e.g. llama.cpp / vLLM on localhost:8080)."""
+    import requests
+
+    url = llm_url or os.environ.get("LLM_URL", DEFAULT_LLM_URL)
+    payload = {
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are a Senior OpenShift Platform SRE and Virtualization Upgrade Specialist. "
+                    "Analyze the provided cluster facts, operator matrix (MTV, Dell CSM, Portworx), "
+                    "and TestOps policies. Provide a concise, authoritative executive summary and recommendation."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ],
+        "max_tokens": 300,
+        "temperature": 0.2,
+    }
+    if model_name:
+        payload["model"] = model_name
+
+    try:
+        resp = requests.post(url, json=payload, timeout=timeout)
+        if resp.status_code == 200:
+            data = resp.json()
+            choices = data.get("choices", [])
+            if choices:
+                return choices[0].get("message", {}).get("content", "").strip()
+    except Exception as exc:
+        log.warning("Local LLM request to %s failed: %s (using expert heuristic fallback)", url, exc)
+    return None
+
+
+def fetch_confluence_policy(
+    confluence_base_url: str | None = None,
+    page_id: str | None = None,
+    auth_token: str | None = None,
+) -> str | None:
+    """Placeholder for future direct Confluence REST API ingestion.
+    
+    Confluence Cloud / Data Center endpoint:
+        GET {confluence_base_url}/wiki/rest/api/content/{page_id}?expand=body.storage
+    """
+    base_url = confluence_base_url or os.environ.get("CONFLUENCE_URL")
+    pid = page_id or os.environ.get("CONFLUENCE_PAGE_ID")
+    token = auth_token or os.environ.get("CONFLUENCE_API_TOKEN")
+
+    if not base_url or not pid:
+        # Placeholder: Confluence API not configured yet; return None to use built-in policy
+        return None
+
+    import requests
+
+    try:
+        headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+        resp = requests.get(f"{base_url.rstrip('/')}/wiki/rest/api/content/{pid}?expand=body.storage", headers=headers, timeout=15)
+        if resp.status_code == 200:
+            return resp.json().get("body", {}).get("storage", {}).get("value", "")
+    except Exception as exc:
+        log.warning("Confluence API fetch failed: %s (using default policy)", exc)
+    return None
+
+
+def load_testops_policy(file_path: str | None = None) -> str:
+    """Load TestOps policy (from Confluence API placeholder, custom file, or built-in defaults)."""
+    # 1. Check Confluence API placeholder
+    confluence_content = fetch_confluence_policy()
+    if confluence_content:
+        return confluence_content
+
+    # 2. Check local policy file if present
+    if file_path and os.path.exists(file_path):
         try:
-            with open(policy_path, "r", encoding="utf-8") as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 return f.read()
         except OSError:
             pass
-    return "TestOps Policy: Prioritize active VM migration stability. Require CSI driver validation and test pass on major drift."
+
+    default_path = os.path.join(os.getcwd(), "data", "testops_confluence_policy.md")
+    if os.path.exists(default_path):
+        try:
+            with open(default_path, "r", encoding="utf-8") as f:
+                return f.read()
+        except OSError:
+            pass
+
+    return "TestOps Policy Standard: Prioritize active VM migration (MTV) continuity. Require CSI storage failover verification."
 
 
 def calculate_version_drift(current_version: str, target_version: str) -> dict[str, Any]:
@@ -72,6 +158,8 @@ def generate_strategic_analysis(
     cve_count: int,
     critical_cve_count: int,
     policy_text: str,
+    llm_url: str | None = None,
+    use_live_llm: bool = True,
 ) -> dict[str, Any]:
     """Generate comprehensive strategic evaluation with executive synopsis and test plan."""
     drift = calculate_version_drift(cluster.ocp_version, target_version)
@@ -134,6 +222,23 @@ def generate_strategic_analysis(
             f"RECOMMENDATION: APPROVED FOR STAGED ROLLOUT (GO). Target release {target_version} provides verified "
             f"compatibility across MTV, Dell CSM, and Portworx without major version drift."
         )
+
+    # Query Live Local LLM if enabled and reachable
+    if use_live_llm:
+        llm_prompt = (
+            f"Cluster: {cluster.name}\n"
+            f"Current OCP Version: {cluster.ocp_version}\n"
+            f"Target OCP Version: {target_version}\n"
+            f"Installed Operators: {json.dumps(components_map)}\n"
+            f"Version Drift: {drift['drift_type']} (Major: {drift['is_major_drift']})\n"
+            f"Deterministic Verdict: {verdict}\n"
+            f"Identified Risks: {', '.join(escalation_reasons) if escalation_reasons else 'None'}\n"
+            f"TestOps Policy: Prioritize active VM migration (MTV). Validate Dell CSM / Portworx storage failover.\n\n"
+            f"Write a 2-3 sentence executive synopsis for the SRE Lead explaining why this upgrade is {verdict}."
+        )
+        llm_narrative = query_local_llm(llm_prompt, llm_url=llm_url)
+        if llm_narrative:
+            synopsis = f"[Local LLM Analysis] {llm_narrative}"
 
     # Build Deep Impact Breakdown
     impact_analysis = {

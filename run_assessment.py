@@ -28,8 +28,9 @@ def main():
     ap.add_argument("--cluster", required=True, help="cluster name from inventory (e.g. east-prod-01)")
     ap.add_argument("--target", required=True, help="candidate target OCP version (e.g. 4.22.8 or 5.0.0)")
     ap.add_argument("--llm", action="store_true", help="enable LLM Strategic Migration & Escalation Advisor")
-    ap.add_argument("--confluence", action="store_true", help="ingest TestOps Confluence policies")
-    ap.add_argument("--confluence-path", help="path to custom TestOps confluence markdown file")
+    ap.add_argument("--llm-url", default="http://127.0.0.1:8080/v1/chat/completions", help="local or remote LLM OpenAI-compatible endpoint URL")
+    ap.add_argument("--confluence-page-id", help="placeholder: Confluence Page ID for API ingestion")
+    ap.add_argument("--confluence-url", help="placeholder: Confluence Base URL")
     ap.add_argument("--kubeconfig", help="path to kubeconfig for live ClusterVersion inspection")
     ap.add_argument("--db-url", help="overrides DATABASE_URL")
     args = ap.parse_args()
@@ -71,7 +72,7 @@ def main():
         }
 
         strategic_output = None
-        if args.llm or args.confluence:
+        if args.llm:
             from engine.llm_advisor import generate_strategic_analysis, load_testops_policy
 
             installed = (
@@ -82,7 +83,7 @@ def main():
             compat_records = db.query(OperatorCompat).all()
             cve_count = db.query(Advisory).filter(Advisory.severity == "important").count()
             crit_cve_count = db.query(Advisory).filter(Advisory.severity == "critical").count()
-            policy_text = load_testops_policy(args.confluence_path)
+            policy_text = load_testops_policy()
 
             strategic_output = generate_strategic_analysis(
                 cluster=cluster,
@@ -93,6 +94,8 @@ def main():
                 cve_count=cve_count,
                 critical_cve_count=crit_cve_count,
                 policy_text=policy_text,
+                llm_url=args.llm_url,
+                use_live_llm=args.llm,
             )
 
     print("\n" + "=" * 70)
