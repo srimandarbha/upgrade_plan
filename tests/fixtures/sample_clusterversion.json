@@ -1,0 +1,27 @@
+{
+  "apiVersion": "config.openshift.io/v1",
+  "kind": "ClusterVersion",
+  "metadata": {"name": "version"},
+  "spec": {"channel": "stable-4.21", "clusterID": "abc-123"},
+  "status": {
+    "desired": {"version": "4.21.22", "image": "quay.io/openshift-release-dev/ocp-release@sha256:bbb"},
+    "availableUpdates": [
+      {"version": "4.21.24", "image": "quay.io/openshift-release-dev/ocp-release@sha256:eee"}
+    ],
+    "conditionalUpdates": [
+      {
+        "release": {"version": "4.22.6"},
+        "risks": [
+          {
+            "url": "https://bugzilla.redhat.com/show_bug.cgi?id=2345111",
+            "name": "MultipathSCSIQueueDepth",
+            "message": "This cluster is running multipath-configured SCSI devices matching the affected pattern.",
+            "matchingRules": [
+              {"type": "PromQL", "promql": {"promql": "count(node_multipath_scsi_enabled) > 0"}}
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

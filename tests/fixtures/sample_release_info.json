@@ -1,0 +1,20 @@
+{
+  "metadata": {"version": "4.22.8"},
+  "digest": "sha256:eeeeeeee",
+  "references": {
+    "kind": "ImageStream",
+    "apiVersion": "image.openshift.io/v1",
+    "spec": {
+      "tags": [
+        {
+          "name": "cluster-version-operator",
+          "from": {"kind": "DockerImage", "name": "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:111"}
+        },
+        {
+          "name": "kubevirt-hyperconverged-operator",
+          "from": {"kind": "DockerImage", "name": "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:222"}
+        }
+      ]
+    }
+  }
+}

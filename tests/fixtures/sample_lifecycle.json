@@ -1,0 +1,26 @@
+{
+  "data": [
+    {
+      "name": "Openshift Container Platform 4",
+      "version": "4.20",
+      "type": "OpenShift",
+      "phase": [
+        {"name": "General availability", "date": "2026-02-25"},
+        {"name": "Full support", "date": "2026-02-25"},
+        {"name": "Maintenance support", "date": "2027-08-25"},
+        {"name": "End of life", "date": "2028-02-25"}
+      ]
+    },
+    {
+      "name": "Openshift Container Platform 4",
+      "version": "4.22",
+      "type": "OpenShift",
+      "phase": [
+        {"name": "General availability", "date": "2026-06-09"},
+        {"name": "Full support", "date": "2026-06-09"},
+        {"name": "Maintenance support", "date": "2027-12-09"},
+        {"name": "End of life", "date": "2028-06-09"}
+      ]
+    }
+  ]
+}

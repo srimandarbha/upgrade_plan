@@ -1,0 +1,132 @@
+# Hand-curated MTV, Dell CSM, and Portworx compatibility + known-bug data.
+# Source of truth for each entry is the vendor/Red Hat documentation.
+# Loaded into operator_compat and advisories tables via collectors/vendor_matrix.py.
+
+operator_compat:
+  # ===========================================================================
+  # MTV (Migration Toolkit for Virtualization / forklift-operator)
+  # ===========================================================================
+  - component: mtv
+    operator_version: "2.6.0"
+    min_ocp: "4.15"
+    max_ocp: "4.17"
+    source: "redhat-mtv-matrix"
+    notes: >
+      MTV 2.6.0 supported on OCP 4.15 to 4.17. Validated for VMware vSphere 7.x/8.x
+      and OpenStack source migrations into OpenShift Virtualization.
+
+  - component: mtv
+    operator_version: "2.7.0"
+    min_ocp: "4.16"
+    max_ocp: "4.18"
+    source: "redhat-mtv-matrix"
+    notes: >
+      MTV 2.7.0 adds support for warm migrations with changed block tracking (CBT)
+      and OpenShift Virtualization 4.16+. Requires OCP <= 4.18.
+
+  - component: mtv
+    operator_version: "2.8.0"
+    min_ocp: "4.18"
+    max_ocp: "4.22"
+    source: "redhat-mtv-matrix"
+    notes: >
+      MTV 2.8.x validated on OCP 4.18 through 4.22. Supports direct vSphere 8 U3
+      migration plans with automated storage class mapping.
+
+  # ===========================================================================
+  # Dell CSM (Container Storage Modules)
+  # ===========================================================================
+  - component: dell-csm
+    operator_version: "1.9"
+    min_ocp: "4.17"
+    max_ocp: "4.18"
+    source: "dell-support-matrix"
+    notes: >
+      CSM Operator v1.9.x validated for CSM 1.14 on OCP 4.17 and 4.18.
+      Covers PowerStore, PowerFlex, PowerScale, and PowerMax CSI drivers.
+
+  - component: dell-csm
+    operator_version: "1.11.0"
+    min_ocp: "4.18"
+    max_ocp: "4.22"
+    source: "dell-support-matrix"
+    notes: >
+      CSM Operator v1.11.0 validated on OCP 4.18 through 4.22. Includes
+      PowerStore CSI 2.11 with VolumeGroupSnapshot support for VM disks.
+
+  - component: dell-csm
+    operator_version: "1.12.0"
+    min_ocp: "4.20"
+    max_ocp: "4.22"
+    source: "dell-support-matrix"
+    notes: >
+      CSM Operator v1.12.0 for OCP 4.20 to 4.22. Requires Dell CSI v2.12+.
+      Does not support major release jumps (OCP 5.x) without CSI driver upgrade.
+
+  # ===========================================================================
+  # Portworx Enterprise Operator
+  # ===========================================================================
+  - component: portworx
+    operator_version: "24.2.0"
+    min_ocp: "4.14"
+    max_ocp: "4.16"
+    source: "portworx-support-matrix"
+    notes: >
+      Portworx Enterprise Operator 24.2 validated up to OCP 4.16.
+
+  - component: portworx
+    operator_version: "25.3.0"
+    min_ocp: "4.16"
+    max_ocp: "4.22"
+    source: "portworx-support-matrix"
+    notes: >
+      Portworx Enterprise Operator 25.3.0 validated on OCP 4.16 through 4.22.
+      Full support for OpenShift Virtualization live migration and sharedv4 RWX block volumes.
+
+  - component: portworx
+    operator_version: "26.1.0"
+    min_ocp: "4.20"
+    max_ocp: "4.22"
+    source: "portworx-support-matrix"
+    notes: >
+      Portworx 26.1.0 for OCP 4.20 to 4.22. Requires kernel header alignment
+      on CoreOS nodes. Major drift to OCP 5.x is unsupported without Portworx 27.x.
+
+known_bugs:
+  - component: mtv
+    external_id: "MTV-1042"
+    title: >
+      Warm migration hangs during final cutover phase if OCP API server throttles
+      virt-v2v controller status updates on OCP 4.22.3 - 4.22.5.
+    severity: important
+    affected_version_range: "2.6.0-2.7.0"
+    url: "https://access.redhat.com/solutions/mtv-migration-cutover-bug"
+    published_at: null
+    workaround: >
+      Upgrade MTV operator to 2.8.0 before upgrading target cluster beyond OCP 4.18.
+
+  - component: dell-csm
+    external_id: "DELL-CSM-4412"
+    title: >
+      PowerStore CSI driver intermittent volume detach timeout during node drain
+      on OCP versions with Kubernetes 1.31+ kernel drift.
+    severity: important
+    affected_version_range: "<=1.9.0"
+    url: "https://dell.github.io/csm-docs/docs/known-issues/"
+    published_at: null
+    workaround: >
+      Upgrade Dell CSM operator to 1.11.0+ before initiating cluster upgrade.
+
+  - component: portworx
+    external_id: "PWX-46691"
+    title: >
+      Portworx-specific ServiceAccounts without annotations are updated on
+      every reconciliation loop, triggering excessive Secret regeneration and
+      OCP API traffic.
+    severity: moderate
+    affected_version_range: "<=4.15"
+    url: "https://docs.portworx.com/portworx-enterprise/operator-release-notes"
+    published_at: null
+    workaround: >
+      Add at least one annotation to each Portworx-specific ServiceAccount object;
+      fixed going forward in Operator 25.3.0+.

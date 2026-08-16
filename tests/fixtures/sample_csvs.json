@@ -1,0 +1,27 @@
+[
+  {
+    "metadata": {"name": "kubevirt-hyperconverged-operator.v4.21.3", "namespace": "openshift-cnv"},
+    "spec": {"version": "4.21.3"},
+    "status": {"phase": "Succeeded"}
+  },
+  {
+    "metadata": {"name": "dell-csm-operator.v1.9.2", "namespace": "dell-csm-operator"},
+    "spec": {"version": "1.9.2"},
+    "status": {"phase": "Succeeded"}
+  },
+  {
+    "metadata": {"name": "portworx-operator.v25.3.0", "namespace": "portworx"},
+    "spec": {"version": "25.3.0"},
+    "status": {"phase": "Succeeded"}
+  },
+  {
+    "metadata": {"name": "cert-manager-operator.v1.14.0", "namespace": "cert-manager-operator"},
+    "spec": {"version": "1.14.0"},
+    "status": {"phase": "Succeeded"}
+  },
+  {
+    "metadata": {"name": "some-broken-operator.v1.0.0", "namespace": "some-ns"},
+    "spec": {"version": "1.0.0"},
+    "status": {"phase": "Failed"}
+  }
+]

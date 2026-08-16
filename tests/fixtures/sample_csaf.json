@@ -1,0 +1,10 @@
+[
+  {
+    "id": "RHSA-2026:29834",
+    "title": "Important: OpenShift Container Platform 4.21.22 security update",
+    "severity": "important",
+    "current_release_date": "2026-07-10T00:00:00Z",
+    "initial_release_date": "2026-07-10T00:00:00Z",
+    "self_href": "https://access.redhat.com/errata/RHSA-2026:29834"
+  }
+]

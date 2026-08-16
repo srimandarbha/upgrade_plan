@@ -1,0 +1,24 @@
+{
+  "nodes": [
+    {"version": "4.21.20", "payload": "quay.io/openshift-release-dev/ocp-release@sha256:aaa"},
+    {"version": "4.21.22", "payload": "quay.io/openshift-release-dev/ocp-release@sha256:bbb"},
+    {"version": "4.22.6", "payload": "quay.io/openshift-release-dev/ocp-release@sha256:ccc"},
+    {"version": "4.22.8", "payload": "quay.io/openshift-release-dev/ocp-release@sha256:ddd"}
+  ],
+  "edges": [[0, 1], [1, 2], [2, 3]],
+  "conditionalEdges": [
+    {
+      "edges": [{"from": "4.21.22", "to": "4.22.6"}],
+      "risks": [
+        {
+          "url": "https://bugzilla.redhat.com/show_bug.cgi?id=2345111",
+          "name": "MultipathSCSIQueueDepth",
+          "message": "Clusters with multipath-configured SCSI devices may see degraded I/O throughput immediately after this update.",
+          "matchingRules": [
+            {"type": "PromQL", "promql": {"promql": "count(node_multipath_scsi_enabled) > 0"}}
+          ]
+        }
+      ]
+    }
+  ]
+}
