@@ -1,22 +1,17 @@
 """Strategic Upgrade & Migration LLM Advisor Engine.
 
-Synthesizes:
-  - Deterministic facts (Postgres: Cincinnati edges, RHSAs, EOL dates, operator matrices)
-  - Operator ecosystem state (MTV / Forklift, Dell CSM, Portworx, OCV)
-  - TestOps Confluence Policy & VM migration continuity principles
-  - Version drift dynamics (e.g. OCP 4 -> 5, or major y-stream jumps)
+Provides unified JSON output across both:
+  - Deterministic evaluation mode (fast rule-based checks)
+  - LLM evaluation mode (deep reasoning + TestOps risk synthesis via local/remote LLM)
 
-Provides:
-  - Executive Synopsis & Risk Rationale
-  - Deep Component & Storage Impact Breakdown
-  - Actionable TestOps Remediation & Qualification Plan
-  - Human-in-the-Loop Sign-off Form
+Both modes output the exact same JSON schema.
 """
 from __future__ import annotations
 
 import json
 import logging
 import os
+import re
 from typing import Any
 
 from db.models import Assessment, Cluster, ComponentVersion, OperatorCompat, ProductLifecycle, UpgradeEdge
@@ -29,6 +24,7 @@ DEFAULT_LLM_URL = "http://127.0.0.1:8080/v1/chat/completions"
 
 def query_local_llm(
     prompt: str,
+    system_prompt: str | None = None,
     llm_url: str | None = None,
     model_name: str | None = None,
     timeout: int = 90,
@@ -37,20 +33,18 @@ def query_local_llm(
     import requests
 
     url = llm_url or os.environ.get("LLM_URL", DEFAULT_LLM_URL)
+    default_system = (
+        "You are a Senior OpenShift Platform SRE and Virtualization Upgrade Specialist. "
+        "Analyze the provided cluster facts, operator matrix (MTV, Dell CSM, Portworx), "
+        "and TestOps policies. Always output valid JSON matching the requested schema."
+    )
     payload = {
         "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "You are a Senior OpenShift Platform SRE and Virtualization Upgrade Specialist. "
-                    "Analyze the provided cluster facts, operator matrix (MTV, Dell CSM, Portworx), "
-                    "and TestOps policies. Provide a concise, authoritative executive summary and recommendation."
-                ),
-            },
+            {"role": "system", "content": system_prompt or default_system},
             {"role": "user", "content": prompt},
         ],
-        "max_tokens": 300,
-        "temperature": 0.2,
+        "max_tokens": 600,
+        "temperature": 0.1,
     }
     if model_name:
         payload["model"] = model_name
@@ -63,7 +57,7 @@ def query_local_llm(
             if choices:
                 return choices[0].get("message", {}).get("content", "").strip()
     except Exception as exc:
-        log.warning("Local LLM request to %s failed: %s (using expert heuristic fallback)", url, exc)
+        log.warning("Local LLM request to %s failed: %s (using expert rule engine)", url, exc)
     return None
 
 
@@ -72,17 +66,12 @@ def fetch_confluence_policy(
     page_id: str | None = None,
     auth_token: str | None = None,
 ) -> str | None:
-    """Placeholder for future direct Confluence REST API ingestion.
-    
-    Confluence Cloud / Data Center endpoint:
-        GET {confluence_base_url}/wiki/rest/api/content/{page_id}?expand=body.storage
-    """
+    """Placeholder for future direct Confluence REST API ingestion."""
     base_url = confluence_base_url or os.environ.get("CONFLUENCE_URL")
     pid = page_id or os.environ.get("CONFLUENCE_PAGE_ID")
     token = auth_token or os.environ.get("CONFLUENCE_API_TOKEN")
 
     if not base_url or not pid:
-        # Placeholder: Confluence API not configured yet; return None to use built-in policy
         return None
 
     import requests
@@ -99,12 +88,10 @@ def fetch_confluence_policy(
 
 def load_testops_policy(file_path: str | None = None) -> str:
     """Load TestOps policy (from Confluence API placeholder, custom file, or built-in defaults)."""
-    # 1. Check Confluence API placeholder
     confluence_content = fetch_confluence_policy()
     if confluence_content:
         return confluence_content
 
-    # 2. Check local policy file if present
     if file_path and os.path.exists(file_path):
         try:
             with open(file_path, "r", encoding="utf-8") as f:
@@ -149,6 +136,29 @@ def calculate_version_drift(current_version: str, target_version: str) -> dict[s
     }
 
 
+def extract_json_payload(raw_text: str) -> dict[str, Any] | None:
+    """Attempt to parse JSON from LLM output, extracting from markdown fences if needed."""
+    if not raw_text:
+        return None
+    clean = raw_text.strip()
+    # Check for markdown code fence
+    fence_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", clean, re.DOTALL)
+    if fence_match:
+        clean = fence_match.group(1).strip()
+    elif clean.startswith("{") and clean.endswith("}"):
+        pass
+    else:
+        # Search for first { and last }
+        start = clean.find("{")
+        end = clean.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            clean = clean[start : end + 1]
+    try:
+        return json.loads(clean)
+    except Exception:
+        return None
+
+
 def generate_strategic_analysis(
     cluster: Cluster,
     target_version: str,
@@ -159,9 +169,9 @@ def generate_strategic_analysis(
     critical_cve_count: int,
     policy_text: str,
     llm_url: str | None = None,
-    use_live_llm: bool = True,
+    use_live_llm: bool = False,
 ) -> dict[str, Any]:
-    """Generate comprehensive strategic evaluation with executive synopsis and test plan."""
+    """Generate unified JSON strategic assessment across deterministic and LLM modes."""
     drift = calculate_version_drift(cluster.ocp_version, target_version)
     components_map = {c.component: c.version for c in installed_components}
 
@@ -178,9 +188,7 @@ def generate_strategic_analysis(
                     f"(supported up to {rule.max_ocp or 'current'})."
                 )
 
-    # Core Strategic Motive Decision
-    # If major version drift (e.g. 4 -> 5) or multi-minor jump with active MTV / storage operators,
-    # and no critical emergency CVEs forcing it: ESCALATE TO NO-GO.
+    # Core Rule Reasoning
     escalation_reasons: list[str] = []
     verdict = assessment.verdict.upper()
 
@@ -188,7 +196,7 @@ def generate_strategic_analysis(
         verdict = "NO-GO (ESCALATE)"
         escalation_reasons.append(
             f"Major version architectural drift detected ({cluster.ocp_version} -> {target_version}). "
-            "Under TestOps Policy TESTOPS-POL-4082, major version transitions require mandatory sandbox qualification."
+            "Under TestOps Policy, major version transitions require mandatory sandbox qualification."
         )
 
     if operator_risks:
@@ -223,92 +231,135 @@ def generate_strategic_analysis(
             f"compatibility across MTV, Dell CSM, and Portworx without major version drift."
         )
 
-    # Query Live Local LLM if enabled and reachable
+    # Build Dynamic Impact Breakdown from DB records
+    storage_comps = [c.component for c in installed_components if any(kw in c.component.lower() for kw in ["csm", "csi", "storage", "portworx", "odf", "ceph"])]
+    migration_comps = [c.component for c in installed_components if any(kw in c.component.lower() for kw in ["mtv", "forklift", "migration", "v2v"])]
+
+    dynamic_impact: dict[str, Any] = {
+        "migration_impact": (
+            f"HIGH RISK: Detected migration operator(s) ({', '.join(migration_comps)}). Major version drift or uncertified target may disrupt active VM cutovers and disk transfer streams."
+            if migration_comps and (drift["is_major_drift"] or operator_risks)
+            else (f"STABLE: Migration operator(s) ({', '.join(migration_comps)}) verified within certified range." if migration_comps else "N/A: No active VM migration operators installed.")
+        ),
+        "storage_impact": (
+            f"CRITICAL RISK: Storage CSI operator(s) ({', '.join(storage_comps)}) require kernel header validation and CSI node-driver re-certification on target Kubernetes base."
+            if storage_comps and (operator_risks or drift["is_major_drift"])
+            else (f"VERIFIED: Storage operator(s) ({', '.join(storage_comps)}) certified for target version." if storage_comps else "N/A: No custom CSI storage operators installed.")
+        ),
+        "security_delta": f"{critical_cve_count} Critical and {cve_count} Important CVE/RHSAs tracked in database.",
+        "version_drift": drift,
+    }
+
+    # Build Dynamic Staging Remediation Plan based on installed DB inventory
+    testops_plan = []
+    step_num = 1
+    if operator_risks:
+        testops_plan.append({
+            "step": step_num,
+            "phase": "Pre-Requisite Operator Upgrades",
+            "action": f"Upgrade uncertified operator(s) ({', '.join([c.component for c in installed_components])}) to versions supporting OCP {target_version}.",
+            "gate": "Operator CSVs reach Succeeded phase with 0 CrashLoopBackOff pods.",
+        })
+        step_num += 1
+
+    if migration_comps:
+        testops_plan.append({
+            "step": step_num,
+            "phase": "Sandbox Live Migration Test",
+            "action": f"Execute end-to-end VM warm migration dry run using {', '.join(migration_comps)} on target OCP build.",
+            "gate": "Zero data corruption, successful cutover under SLA window.",
+        })
+        step_num += 1
+
+    if storage_comps:
+        testops_plan.append({
+            "step": step_num,
+            "phase": "CSI Storage Failover Verification",
+            "action": f"Trigger worker node drain and reboot under I/O load on storage operators ({', '.join(storage_comps)}).",
+            "gate": "Volumes reattach within 30s without VolumeAttachment timeout.",
+        })
+        step_num += 1
+
+    testops_plan.append({
+        "step": step_num,
+        "phase": "Fleet Canary Deployment",
+        "action": "Roll out upgrade to 1 non-prod lab cluster before scheduling production fleet windows.",
+        "gate": "ClusterVersion reaches Available=True with 0 cluster operator degraded alerts for 48 hours.",
+    })
+
+    # Dynamic Human Sign-off Form
+    checklist = ["[ ] Maintenance window approved by Change Advisory Board (CAB)"]
+    if migration_comps:
+        checklist.insert(0, f"[ ] All active VM migrations on {', '.join(migration_comps)} paused / drained")
+    if storage_comps:
+        checklist.insert(1, f"[ ] Sandbox failover test passed on {', '.join(storage_comps)}")
+    if operator_risks or drift["is_major_drift"]:
+        checklist.insert(2, "[ ] TestOps qualification test suite executed on target build in staging")
+
+    human_sign_off = {
+        "status": "PENDING_APPROVAL" if "NO-GO" in verdict or "CAVEATS" in verdict else "AUTO_APPROVED",
+        "required_approvers": ["TestOps Lead", "Cloud Platform SRE Lead", "Storage Administrator"],
+        "sign_off_checklist": checklist,
+    }
+
+    # Base unified structure
+    unified_result: dict[str, Any] = {
+        "cluster": cluster.name,
+        "current_version": cluster.ocp_version,
+        "target_version": target_version,
+        "evaluation_mode": "llm" if use_live_llm else "deterministic",
+        "verdict": verdict,
+        "executive_synopsis": synopsis,
+        "reasons": {
+            "blockers": assessment.reasons.get("blockers", []) + escalation_reasons,
+            "caveats": assessment.reasons.get("caveats", []),
+            "info": assessment.reasons.get("info", []),
+        },
+        "impact_analysis": dynamic_impact,
+        "testops_remediation_plan": testops_plan,
+        "human_in_the_loop_sign_off": human_sign_off,
+        "evaluated_at": assessment.evaluated_at.isoformat() if assessment.evaluated_at else None,
+    }
+
+    # If LLM mode is active, prompt the LLM to think and return the JSON decision
     if use_live_llm:
+        system_prompt = (
+            "You are an expert SRE and OpenShift Virtualization Upgrade Decision Engine. "
+            "You evaluate cluster upgrade safety against TestOps policies and return a JSON decision. "
+            "Return ONLY valid JSON matching this schema:\n"
+            "{\n"
+            '  "verdict": "GO" | "GO-WITH-CAVEATS" | "NO-GO" | "NO-GO (ESCALATE)",\n'
+            '  "executive_synopsis": "string",\n'
+            '  "reasons": {"blockers": ["string"], "caveats": ["string"], "info": ["string"]},\n'
+            '  "impact_analysis": {"migration_impact": "string", "storage_impact": "string", "security_delta": "string"}\n'
+            "}"
+        )
         llm_prompt = (
             f"Cluster: {cluster.name}\n"
             f"Current OCP Version: {cluster.ocp_version}\n"
             f"Target OCP Version: {target_version}\n"
             f"Installed Operators: {json.dumps(components_map)}\n"
-            f"Version Drift: {drift['drift_type']} (Major: {drift['is_major_drift']})\n"
-            f"Deterministic Verdict: {verdict}\n"
-            f"Identified Risks: {', '.join(escalation_reasons) if escalation_reasons else 'None'}\n"
-            f"TestOps Policy: Prioritize active VM migration (MTV). Validate Dell CSM / Portworx storage failover.\n\n"
-            f"Write a 2-3 sentence executive synopsis for the SRE Lead explaining why this upgrade is {verdict}."
+            f"Version Drift: {drift['drift_type']} (Major Drift: {drift['is_major_drift']})\n"
+            f"Deterministic Check: {assessment.verdict.upper()}\n"
+            f"Identified Risks: {json.dumps(escalation_reasons)}\n"
+            f"TestOps Policy: Prioritize active VM migration continuity. Require CSI storage validation.\n\n"
+            "Analyze the upgrade and return your JSON decision."
         )
-        llm_narrative = query_local_llm(llm_prompt, llm_url=llm_url)
-        if llm_narrative:
-            synopsis = f"[Local LLM Analysis] {llm_narrative}"
+        raw_llm_out = query_local_llm(llm_prompt, system_prompt=system_prompt, llm_url=llm_url)
+        parsed_llm = extract_json_payload(raw_llm_out) if raw_llm_out else None
 
-    # Build Deep Impact Breakdown
-    impact_analysis = {
-        "migration_impact (MTV)": (
-            "HIGH RISK: Major/unsupported OCP version jump may break virt-v2v controller status streams, "
-            "warm migration changed block tracking (CBT), and vSphere VDDK disk transfer pipes."
-            if "mtv" in components_map and (drift["is_major_drift"] or operator_risks)
-            else "LOW / STABLE: MTV operator verified compatible. Ensure no migration plans are in Cutover state during upgrade."
-        ),
-        "storage_impact (Dell CSM & Portworx)": (
-            f"CRITICAL RISK: Storage CSI drivers ({', '.join([k for k in components_map if 'dell' in k or 'portworx' in k])}) "
-            "require kernel header validation and CSI node-driver re-certification on target Kubernetes base."
-            if operator_risks or drift["is_major_drift"]
-            else "VERIFIED: Dell CSM and Portworx storage operators support target OCP version."
-        ),
-        "security_delta": (
-            f"{critical_cve_count} Critical and {cve_count} Important CVE/RHSAs tracked in database. "
-            f"Target {target_version} incorporates recent security patches."
-        ),
-        "version_drift_index": drift,
-    }
+        if parsed_llm and "verdict" in parsed_llm:
+            unified_result["verdict"] = str(parsed_llm.get("verdict", verdict)).upper()
+            if "executive_synopsis" in parsed_llm:
+                unified_result["executive_synopsis"] = parsed_llm["executive_synopsis"]
+            if "reasons" in parsed_llm and isinstance(parsed_llm["reasons"], dict):
+                unified_result["reasons"].update(parsed_llm["reasons"])
+            if "impact_analysis" in parsed_llm and isinstance(parsed_llm["impact_analysis"], dict):
+                unified_result["impact_analysis"].update(parsed_llm["impact_analysis"])
+            unified_result["evaluation_mode"] = "llm"
+        elif raw_llm_out:
+            # LLM returned text rather than strict JSON; use LLM narrative as synopsis
+            unified_result["executive_synopsis"] = f"[LLM Decision] {raw_llm_out}"
+            unified_result["evaluation_mode"] = "llm"
 
-    # Build Step-by-Step TestOps Remediation Plan
-    testops_plan = [
-        {
-            "step": 1,
-            "phase": "Pre-Requisite Operator Upgrades",
-            "action": "Upgrade MTV to certified operator version (e.g. 2.8.0+) and Dell CSM / Portworx to latest supported z-stream in Pre-Prod.",
-            "gate": "Operator CSVs in Succeeded phase with 0 CrashLoopBackOff pods.",
-        },
-        {
-            "step": 2,
-            "phase": "Staging Sandbox Live Migration Test",
-            "action": "Execute end-to-end VM warm migration dry run from VMware vSphere to OCV on target OCP build.",
-            "gate": "Zero data corruption, successful cutover under 60 seconds.",
-        },
-        {
-            "step": 3,
-            "phase": "CSI Storage Failover Verification",
-            "action": "Trigger node drain and worker reboot while running I/O load on Dell CSM (PowerStore/PowerFlex) and Portworx RWX volumes.",
-            "gate": "Volumes reattach within 30s without VolumeAttachment timeout.",
-        },
-        {
-            "step": 4,
-            "phase": "Fleet Canary Deployment",
-            "action": "Roll out upgrade to 1 non-prod lab cluster before scheduling production fleet windows.",
-            "gate": "ClusterVersion reaches Available=True with 0 cluster operator degraded alerts for 48 hours.",
-        },
-    ]
-
-    # Human Sign-off Form
-    human_sign_off = {
-        "required_approvers": ["TestOps Lead", "Cloud Platform SRE Lead", "Storage Administrator"],
-        "status": "PENDING_APPROVAL" if "NO-GO" in verdict or "CAVEATS" in verdict else "AUTO_APPROVED",
-        "sign_off_checklist": [
-            "[ ] All active MTV VM migrations paused / drained",
-            "[ ] Dell CSM / Portworx sandbox failover test passed",
-            "[ ] TestOps qualification test suite executed on target build",
-            "[ ] Maintenance window approved by Change Advisory Board (CAB)",
-        ],
-    }
-
-    return {
-        "cluster": cluster.name,
-        "current_version": cluster.ocp_version,
-        "target_version": target_version,
-        "strategic_verdict": verdict,
-        "executive_synopsis": synopsis,
-        "escalation_reasons": escalation_reasons,
-        "impact_analysis": impact_analysis,
-        "testops_remediation_plan": testops_plan,
-        "human_in_the_loop_sign_off": human_sign_off,
-    }
+    return unified_result
