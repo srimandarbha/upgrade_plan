@@ -5,7 +5,7 @@ import os
 root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 output_file = os.path.join(root_dir, "PROJECT_BUNDLE.md")
 
-excluded_dirs = {".git", "venv", ".venv", "__pycache__", "scripts"}
+excluded_dirs = {".git", "venv", ".venv", "__pycache__", ".pytest_cache", "scripts"}
 excluded_files = {"ocv_agent.db", "PROJECT_BUNDLE.md"}
 
 files_to_bundle = []
