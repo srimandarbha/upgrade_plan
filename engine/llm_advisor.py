@@ -123,15 +123,25 @@ def calculate_version_drift(current_version: str, target_version: str) -> dict[s
     patch_tgt = tgt_parts[2] if len(tgt_parts) > 2 else 0
 
     is_major_drift = major_tgt > major_cur
+    is_downgrade = (tgt_parts + (0, 0, 0))[:3] < (cur_parts + (0, 0, 0))[:3]
     minor_diff = (major_tgt * 100 + minor_tgt) - (major_cur * 100 + minor_cur)
     is_multi_minor_jump = minor_diff > 1
+
+    drift_type = "major" if is_major_drift else (
+        "downgrade" if is_downgrade else (
+            "multi-minor" if is_multi_minor_jump else (
+                "minor" if minor_diff == 1 else "z-stream"
+            )
+        )
+    )
 
     return {
         "current": current_version,
         "target": target_version,
         "is_major_drift": is_major_drift,
+        "is_downgrade": is_downgrade,
         "is_multi_minor_jump": is_multi_minor_jump,
-        "drift_type": "major" if is_major_drift else ("multi-minor" if is_multi_minor_jump else ("minor" if minor_diff == 1 else "z-stream")),
+        "drift_type": drift_type,
         "minor_steps": minor_diff,
     }
 
@@ -144,19 +154,71 @@ def extract_json_payload(raw_text: str) -> dict[str, Any] | None:
     # Check for markdown code fence
     fence_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", clean, re.DOTALL)
     if fence_match:
-        clean = fence_match.group(1).strip()
-    elif clean.startswith("{") and clean.endswith("}"):
-        pass
-    else:
-        # Search for first { and last }
-        start = clean.find("{")
-        end = clean.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            clean = clean[start : end + 1]
+        try:
+            return json.loads(fence_match.group(1))
+        except json.JSONDecodeError:
+            pass
     try:
         return json.loads(clean)
-    except Exception:
+    except json.JSONDecodeError:
         return None
+
+
+def generate_expert_decision(
+    cluster: Cluster,
+    target_version: str,
+    assessment: Assessment,
+    installed_components: list[ComponentVersion],
+    compat_records: list[OperatorCompat],
+    cve_count: int,
+    critical_cve_count: int,
+    policy_text: str,
+) -> dict[str, Any]:
+    """Fallback deterministic logic mimicking the LLM's comprehensive decision framework."""
+    drift = calculate_version_drift(cluster.ocp_version, target_version)
+    reasons_data = assessment.reasons or {}
+    deterministic_verdict = assessment.verdict.upper()
+
+    verdict = deterministic_verdict
+    escalation_reasons: list[str] = list(reasons_data.get("blockers") or [])
+
+    if drift["is_downgrade"]:
+        verdict = "NO-GO (ESCALATE)"
+        escalation_reasons.append(
+            f"In-place platform downgrade/rollback ({cluster.ocp_version} -> {target_version}) is strictly unsupported "
+            "by OpenShift Container Platform, Kubernetes, and CVO/MCO architecture. Rollbacks require full cluster redeployment or etcd disaster recovery restore."
+        )
+
+    if drift["is_major_drift"]:
+        verdict = "NO-GO (ESCALATE)"
+        escalation_reasons.append(
+            f"Major version architectural drift detected ({cluster.ocp_version} -> {target_version}). "
+            "Under TestOps Policy, major version transitions require mandatory sandbox qualification."
+        )
+
+    components_map = {c.component: c.version for c in installed_components}
+    operator_risks = []
+
+    for comp, ver in components_map.items():
+        if comp == "ocp":
+            continue
+        rules = [r for r in compat_records if r.component == comp and r.operator_version == ver]
+        if rules:
+            if not any(check_version_in_range(target_version, r.min_ocp, r.max_ocp) for r in rules):
+                max_supported = rules[0].max_ocp or "any"
+                operator_risks.append(
+                    f"{comp} (version {ver}) is NOT certified for OCP {target_version} (supported up to {max_supported})."
+                )
+        elif drift["is_major_drift"]:
+            operator_risks.append(
+                f"{comp} (version {ver}) has no verified compatibility rule for major release {target_version}."
+            )
+
+    # Re-use core generation logic for the output structure
+    return generate_strategic_analysis(
+        cluster, target_version, assessment, installed_components, compat_records, 
+        cve_count, critical_cve_count, policy_text
+    )
 
 
 def generate_strategic_analysis(
@@ -191,6 +253,13 @@ def generate_strategic_analysis(
     # Core Rule Reasoning
     escalation_reasons: list[str] = []
     verdict = assessment.verdict.upper()
+
+    if drift["is_downgrade"]:
+        verdict = "NO-GO (ESCALATE)"
+        escalation_reasons.append(
+            f"In-place platform downgrade/rollback ({cluster.ocp_version} -> {target_version}) is strictly unsupported "
+            "by OpenShift Container Platform, Kubernetes, and CVO/MCO architecture. Rollbacks require full cluster redeployment or etcd disaster recovery restore."
+        )
 
     if drift["is_major_drift"]:
         verdict = "NO-GO (ESCALATE)"

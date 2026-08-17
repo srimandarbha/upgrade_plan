@@ -62,7 +62,10 @@ collectors/
   cluster_state.py             Live ClusterVersion + CSVs -> component_versions
   vendor_matrix.py             Curated MTV, Dell CSM, Portworx data -> operator_compat
   release_info.py              `oc adm release info` pullspecs -> release_images
+gitops/
+  bot.py                       GitOps PR automation, ruamel.yaml editing, GitPython & GitHub API
 data/
+  gitops_targets.yaml          Fleet GitOps repository targets and cluster curator mapping
   vendor_matrix_seed.yaml      Hand-curated MTV, Dell CSM, and Portworx compatibility matrix
   testops_confluence_policy.md Ingested TestOps Confluence standards & migration gates
 engine/
@@ -70,6 +73,7 @@ engine/
   llm_advisor.py               Strategic LLM & TestOps migration escalation advisor
 run_collectors.py              Orchestrator for all data collectors
 run_assessment.py              CLI entrypoint for running cluster compatibility assessments
+run_gitops_pr.py               CLI entrypoint for opening/updating GitOps upgrade PRs
 tests/                         Unit tests against saved fixtures (no live network needed)
 ```
 
@@ -231,6 +235,50 @@ RECOMMENDATION: HOLD UPGRADE (NO-GO ESCALATED). Upgrading cluster 'east-prod-01'
    [ ] Dell CSM / Portworx sandbox failover test passed
    [ ] TestOps qualification test suite executed on target build
    [ ] Maintenance window approved by Change Advisory Board (CAB)
+```
+
+---
+
+## Automating GitOps Upgrade Pull Requests
+
+Once an upgrade assessment is persisted in the database, `run_gitops_pr.py` can automatically open or update a GitOps PR bumping the target OCP version across your fleet (e.g. Advanced Cluster Management / OpenShift GitOps `ClusterCurator` manifests):
+
+### Key Safety Gates & Features:
+1. **Assessment-Gated Execution:** Refuses outright on a `NO-GO` verdict, printing blocking reasons and exiting nonzero without touching Git or GitHub APIs.
+2. **Draft by Default for Caveats:** Opens PRs as **Draft** if the verdict is `GO-WITH-CAVEATS` (override with `--force-ready` to open ready-for-review).
+3. **Round-Trip YAML Preservation:** Uses `ruamel.yaml` to modify ACM `ClusterCurator` CRs (`spec.desiredCuration: upgrade`, `spec.upgrade.desiredUpdate`), preserving existing comments, indentation, and structure.
+4. **Idempotent Updates:** Re-running against an existing upgrade branch updates the PR in place rather than creating duplicates.
+5. **Dry-Run Mode:** Generate commit diffs and full Markdown PR bodies without requiring `$GITHUB_TOKEN` or pushing to remote.
+
+### Usage Examples:
+
+```bash
+# 1. Preview GitOps PR changes and generated Markdown body (no token required):
+python run_gitops_pr.py --cluster east-prod-01 --target 4.22.8 --dry-run
+
+# 2. Open / update PR on GitHub:
+export GITHUB_TOKEN=ghp_yourPersonalAccessToken
+python run_gitops_pr.py --cluster east-prod-01 --target 4.22.8
+
+# 3. Force open ready-for-review on GO-WITH-CAVEATS:
+python run_gitops_pr.py --cluster east-prod-01 --target 4.22.8 --force-ready
+```
+
+### GitOps Fleet Configuration:
+Cluster repositories and paths are configured in [`data/gitops_targets.yaml`](file:///c:/Users/SRIMANDARBHA/Projects/ocv-upgrade-agent/ocv-upgrade-agent/data/gitops_targets.yaml):
+```yaml
+defaults:
+  repo_url: "https://github.com/example-org/ocp-gitops-fleet.git"
+  owner: "example-org"
+  repo_name: "ocp-gitops-fleet"
+  base_branch: "main"
+  curator_namespace: "clusters"
+
+clusters:
+  east-prod-01:
+    cluster_path: "clusters/east-prod-01"
+    curator_namespace: "east-prod-01"
+    upstream_graph_url: "http://cincinnati.internal.net/api/upgrades_info/v1/graph"
 ```
 
 ---

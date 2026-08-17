@@ -1,6 +1,8 @@
 SQLAlchemy>=2.0,<3.0
 requests>=2.31
 PyYAML>=6.0
+ruamel.yaml>=0.18       # round-trip-safe YAML editing for the GitOps PR bot
 kubernetes>=29.0
-psycopg2-binary>=2.9   # only needed where DATABASE_URL points at Postgres
+GitPython>=3.1
+psycopg2-binary>=2.9    # only needed where DATABASE_URL points at Postgres
 pytest>=8.0

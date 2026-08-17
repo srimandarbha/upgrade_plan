@@ -1,0 +1,23 @@
+# GitOps repository targets and cluster curator mapping.
+# Used by run_gitops_pr.py and gitops.bot to automate upgrade PRs.
+
+defaults:
+  repo_url: "https://github.com/example-org/ocp-gitops-fleet.git"
+  owner: "example-org"
+  repo_name: "ocp-gitops-fleet"
+  base_branch: "main"
+  curator_namespace: "clusters"
+
+clusters:
+  east-prod-01:
+    cluster_path: "clusters/east-prod-01"
+    curator_namespace: "east-prod-01"
+    upstream_graph_url: "http://cincinnati.internal.net/api/upgrades_info/v1/graph"
+
+  west-prod-01:
+    cluster_path: "clusters/west-prod-01"
+    curator_namespace: "west-prod-01"
+
+  central-edge-01:
+    cluster_path: "clusters/central-edge-01"
+    curator_namespace: "central-edge-01"

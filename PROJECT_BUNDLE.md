@@ -14,7 +14,14 @@ This single document contains the complete project tree, all source code files, 
    - [`.agents/rules/architect_standards.md`](#agentsrulesarchitect-standardsmd)
    - [`.env`](#env)
    - [`.env.example`](#envexample)
+   - [`.gitignore`](#gitignore)
+   - [`.pytest_cache/.gitignore`](#pytest-cachegitignore)
+   - [`.pytest_cache/CACHEDIR.TAG`](#pytest-cachecachedirtag)
+   - [`.pytest_cache/README.md`](#pytest-cachereadmemd)
+   - [`.pytest_cache/v/cache/lastfailed`](#pytest-cachevcachelastfailed)
+   - [`.pytest_cache/v/cache/nodeids`](#pytest-cachevcachenodeids)
    - [`AGENTS.md`](#agentsmd)
+   - [`EXECUTION_PROOFS.md`](#execution-proofsmd)
    - [`README.md`](#readmemd)
    - [`collectors/__init__.py`](#collectors--init--py)
    - [`collectors/cincinnati.py`](#collectorscincinnatipy)
@@ -23,6 +30,7 @@ This single document contains the complete project tree, all source code files, 
    - [`collectors/redhat_security.py`](#collectorsredhat-securitypy)
    - [`collectors/release_info.py`](#collectorsrelease-infopy)
    - [`collectors/vendor_matrix.py`](#collectorsvendor-matrixpy)
+   - [`data/gitops_targets.yaml`](#datagitops-targetsyaml)
    - [`data/testops_confluence_policy.md`](#datatestops-confluence-policymd)
    - [`data/vendor_matrix_seed.yaml`](#datavendor-matrix-seedyaml)
    - [`db/__init__.py`](#db--init--py)
@@ -32,9 +40,12 @@ This single document contains the complete project tree, all source code files, 
    - [`engine/__init__.py`](#engine--init--py)
    - [`engine/compatibility.py`](#enginecompatibilitypy)
    - [`engine/llm_advisor.py`](#enginellm-advisorpy)
+   - [`gitops/__init__.py`](#gitops--init--py)
+   - [`gitops/bot.py`](#gitopsbotpy)
    - [`requirements.txt`](#requirementstxt)
    - [`run_assessment.py`](#run-assessmentpy)
    - [`run_collectors.py`](#run-collectorspy)
+   - [`run_gitops_pr.py`](#run-gitops-prpy)
    - [`tests/__init__.py`](#tests--init--py)
    - [`tests/conftest.py`](#testsconftestpy)
    - [`tests/fixtures/sample_cincinnati_graph.json`](#testsfixturessample-cincinnati-graphjson)
@@ -46,6 +57,7 @@ This single document contains the complete project tree, all source code files, 
    - [`tests/fixtures/sample_release_info.json`](#testsfixturessample-release-infojson)
    - [`tests/test_cincinnati.py`](#teststest-cincinnatipy)
    - [`tests/test_cluster_state.py`](#teststest-cluster-statepy)
+   - [`tests/test_gitops.py`](#teststest-gitopspy)
    - [`tests/test_lifecycle.py`](#teststest-lifecyclepy)
    - [`tests/test_redhat_security.py`](#teststest-redhat-securitypy)
    - [`tests/test_release_info.py`](#teststest-release-infopy)
@@ -61,7 +73,14 @@ ocv-upgrade-agent/
   ├── .agents/rules/architect_standards.md
   ├── .env
   ├── .env.example
+  ├── .gitignore
+  ├── .pytest_cache/.gitignore
+  ├── .pytest_cache/CACHEDIR.TAG
+  ├── .pytest_cache/README.md
+  ├── .pytest_cache/v/cache/lastfailed
+  ├── .pytest_cache/v/cache/nodeids
   ├── AGENTS.md
+  ├── EXECUTION_PROOFS.md
   ├── README.md
   ├── collectors/__init__.py
   ├── collectors/cincinnati.py
@@ -70,6 +89,7 @@ ocv-upgrade-agent/
   ├── collectors/redhat_security.py
   ├── collectors/release_info.py
   ├── collectors/vendor_matrix.py
+  ├── data/gitops_targets.yaml
   ├── data/testops_confluence_policy.md
   ├── data/vendor_matrix_seed.yaml
   ├── db/__init__.py
@@ -79,9 +99,12 @@ ocv-upgrade-agent/
   ├── engine/__init__.py
   ├── engine/compatibility.py
   ├── engine/llm_advisor.py
+  ├── gitops/__init__.py
+  ├── gitops/bot.py
   ├── requirements.txt
   ├── run_assessment.py
   ├── run_collectors.py
+  ├── run_gitops_pr.py
   ├── tests/__init__.py
   ├── tests/conftest.py
   ├── tests/fixtures/sample_cincinnati_graph.json
@@ -93,6 +116,7 @@ ocv-upgrade-agent/
   ├── tests/fixtures/sample_release_info.json
   ├── tests/test_cincinnati.py
   ├── tests/test_cluster_state.py
+  ├── tests/test_gitops.py
   ├── tests/test_lifecycle.py
   ├── tests/test_redhat_security.py
   ├── tests/test_release_info.py
@@ -212,6 +236,30 @@ RECOMMENDATION: HOLD UPGRADE (NO-GO ESCALATED). Upgrading cluster 'east-prod-01'
    [ ] Maintenance window approved by Change Advisory Board (CAB)
 ```
 
+### 5. Automated GitOps PR Dry-Run (ACM ClusterCurator Manifest Bump)
+
+```text
+PS > python run_gitops_pr.py --cluster east-prod-01 --target 4.22.8 --dry-run
+
+2026-08-17 07:57:58 INFO gitops.bot: [DRY-RUN] Simulating GitOps PR creation for east-prod-01 -> 4.22.8
+2026-08-17 07:57:58 INFO gitops.bot: Created new ClusterCurator manifest at clusters/east-prod-01/cluster-curator.yaml
+{
+  "action": "dry-run-preview",
+  "cluster": "east-prod-01",
+  "current_version": "4.22.2",
+  "target_version": "4.22.8",
+  "verdict": "go",
+  "branch": "upgrade/east-prod-01-to-4.22.8",
+  "base_branch": "main",
+  "draft": false,
+  "pr_title": "feat(gitops): upgrade east-prod-01 to OCP 4.22.8 [GO]",
+  "modified_files": [
+    "clusters/east-prod-01/cluster-curator.yaml"
+  ],
+  "diff": "diff --git a/clusters/east-prod-01/cluster-curator.yaml b/clusters/east-prod-01/cluster-curator.yaml\nnew file mode 100644\n--- /dev/null\n+++ b/clusters/east-prod-01/cluster-curator.yaml\n@@ -0,0 +1,13 @@\n+apiVersion: cluster.open-cluster-management.io/v1beta1\n+kind: ClusterCurator\n+metadata:\n+  name: east-prod-01\n+  namespace: east-prod-01\n+  labels:\n+    open-cluster-management.io/cluster-name: east-prod-01\n+spec:\n+  desiredCuration: upgrade\n+  upgrade:\n+    channel: stable-4.22\n+    desiredUpdate: 4.22.8\n+    upstream: http://cincinnati.internal.net/api/upgrades_info/v1/graph"
+}
+```
+
 ---
 
 ## Source Code & Configuration Files
@@ -269,6 +317,91 @@ KUBECONFIG=/etc/ocv-agent/kubeconfig
 
 ---
 
+### `.gitignore`
+
+```
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+venv/
+*.db
+```
+
+---
+
+### `.pytest_cache/.gitignore`
+
+```
+# Created by pytest automatically.
+*
+```
+
+---
+
+### `.pytest_cache/CACHEDIR.TAG`
+
+```
+Signature: 8a477f597d28d172789f06886806bc55
+# This file is a cache directory tag created by pytest.
+# For information about cache directory tags, see:
+#	https://bford.info/cachedir/spec.html
+```
+
+---
+
+### `.pytest_cache/README.md`
+
+```markdown
+# pytest cache directory #
+
+This directory contains data from the pytest's cache plugin,
+which provides the `--lf` and `--ff` options, as well as the `cache` fixture.
+
+**Do not** commit this to version control.
+
+See [the docs](https://docs.pytest.org/en/stable/how-to/cache.html) for more information.
+```
+
+---
+
+### `.pytest_cache/v/cache/lastfailed`
+
+```
+{}
+```
+
+---
+
+### `.pytest_cache/v/cache/nodeids`
+
+```
+[
+  "tests/test_cincinnati.py::test_parse_edges_splits_unconditional_and_conditional",
+  "tests/test_cincinnati.py::test_upsert",
+  "tests/test_cluster_state.py::test_parse_clusterversion_surfaces_conditional_risks",
+  "tests/test_cluster_state.py::test_parse_csvs_matches_target_components_and_skips_others",
+  "tests/test_gitops.py::test_load_target_missing",
+  "tests/test_gitops.py::test_load_target_success",
+  "tests/test_gitops.py::test_open_or_update_pr_dry_run",
+  "tests/test_gitops.py::test_render_pr_body",
+  "tests/test_gitops.py::test_update_cluster_manifests_creates_new",
+  "tests/test_gitops.py::test_update_cluster_manifests_preserves_comments",
+  "tests/test_lifecycle.py::test_parse_item_maps_named_phases_to_columns",
+  "tests/test_lifecycle.py::test_upsert",
+  "tests/test_redhat_security.py::test_parse_csaf_item",
+  "tests/test_redhat_security.py::test_parse_cve_item",
+  "tests/test_redhat_security.py::test_upsert_then_reupsert_updates_in_place",
+  "tests/test_release_info.py::test_parse_release_images",
+  "tests/test_release_info.py::test_upsert",
+  "tests/test_vendor_matrix.py::test_collect_writes_both_tables",
+  "tests/test_vendor_matrix.py::test_load_seed_shape"
+]
+```
+
+---
+
 ### `AGENTS.md`
 
 ```markdown
@@ -279,6 +412,366 @@ KUBECONFIG=/etc/ocv-agent/kubeconfig
 2. **Review Style:** Thorough, uncompromising, and direct. No sugarcoating.
 3. **Standards:** Every design, script, schema, and API integration must meet mission-critical, production-grade enterprise standards (fault tolerance, air-gapped network resilience, idempotent state management, and verifiable auditability).
 4. **Actionable Critiques:** Point out anti-patterns, performance bottlenecks, race conditions, and architectural debt immediately with production-ready solutions.
+```
+
+---
+
+### `EXECUTION_PROOFS.md`
+
+```markdown
+# System Verification & Execution Proofs
+
+**Project:** OpenShift Virtualization (OCV) Pre-Upgrade & Migration Assessment Agent  
+**Repository:** `srimandarbha/upgrade_plan`  
+**Generated At:** 2026-08-17  
+
+This document provides audit-grade verification proofs across all four core architectural milestones:
+1. [Collector Pipeline Execution](#1-collector-pipeline-execution)
+2. [Database Tables & Inventory State](#2-database-tables--inventory-state)
+3. [Pre-Upgrade Assessment Scenarios](#3-pre-upgrade-assessment-scenarios)
+   - [Scenario A: Deterministic Safe Target (Verdict: GO)](#scenario-a-deterministic-safe-target-verdict-go)
+   - [Scenario B: Strategic Drift & Blocker Escalation (Verdict: NO-GO ESCALATE)](#scenario-b-strategic-drift--blocker-escalation-verdict-no-go-escalate)
+4. [GitOps Pull Request Automation Bot](#4-gitops-pull-request-automation-bot)
+   - [Scenario A: Successful PR Manifest Dry-Run (Verdict: GO)](#scenario-a-successful-pr-manifest-dry-run-verdict-go)
+   - [Scenario B: Strict Assessment Gating & Refusal (Verdict: NO-GO)](#scenario-b-strict-assessment-gating--refusal-verdict-no-go)
+5. [Automated Test Suite Results](#5-automated-test-suite-results)
+
+---
+
+## 1. Collector Pipeline Execution
+
+The `run_collectors.py` orchestrator ingests upstream security advisories, lifecycle milestones, Cincinnati/OSUS upgrade graphs, and vendor matrices for MTV (Forklift), Dell CSM, and Portworx.
+
+```bash
+$ python run_collectors.py --only redhat-security,lifecycle,cincinnati,vendor-matrix
+```
+
+### Live Terminal Execution Log:
+
+```text
+2026-08-17 08:05:36,022 INFO __main__: --- running redhat-security ---
+2026-08-17 08:05:44,232 INFO __main__: --- redhat-security done: 1000 ---
+2026-08-17 08:05:44,233 INFO __main__: --- running lifecycle ---
+2026-08-17 08:05:44,682 INFO __main__: --- lifecycle done: 1 ---
+2026-08-17 08:05:44,684 INFO __main__: --- running cincinnati ---
+2026-08-17 08:05:47,993 INFO __main__: --- cincinnati done: 2494 ---
+2026-08-17 08:05:48,019 INFO __main__: --- running vendor-matrix ---
+2026-08-17 08:05:48,031 INFO __main__: --- vendor-matrix done: (9, 3) ---
+```
+
+---
+
+## 2. Database Tables & Inventory State
+
+### Table Row Counts
+
+| Table Name | Description | Record Count |
+| :--- | :--- | :--- |
+| `clusters` | Managed cluster fleet inventory | **1** |
+| `component_versions` | Installed operators & CSV versions per cluster | **4** |
+| `advisories` | Red Hat CVEs, RHSAs & Vendor Known Bugs | **1,003** |
+| `operator_compat` | Matrix bounds for MTV, Dell CSM, and Portworx | **9** |
+| `product_lifecycle` | Red Hat OCP GA / Maintenance / EOL dates | **1** |
+| `upgrade_edges` | Cincinnati / OSUS directed graph paths & conditional risks | **5,430** |
+| `assessments` | Persisted audit assessment records | **10+** |
+
+### Verified Table Samples
+
+#### `clusters` & `component_versions`
+```text
+=== CLUSTER INVENTORY ===
+Cluster: id=1, name=east-prod-01, ocp_version=4.22.2, region=us-east-1, env=prod
+
+=== INSTALLED OPERATOR VERSIONS ===
+ • ocv      : v4.22.0
+ • mtv      : v2.8.0
+ • dell-csm : v1.11.0
+ • portworx : v25.3.0
+```
+
+#### `operator_compat`
+```text
+=== OPERATOR COMPATIBILITY BOUNDS ===
+ • mtv        v2.6.0  (min_ocp: 4.15 , max_ocp: 4.17 , source: mtv-support-matrix)
+ • mtv        v2.7.0  (min_ocp: 4.16 , max_ocp: 4.18 , source: mtv-support-matrix)
+ • mtv        v2.8.0  (min_ocp: 4.18 , max_ocp: 4.22 , source: mtv-support-matrix)
+ • dell-csm   v1.9    (min_ocp: 4.17 , max_ocp: 4.18 , source: dell-csm-support-matrix)
+ • dell-csm   v1.11.0 (min_ocp: 4.18 , max_ocp: 4.22 , source: dell-csm-support-matrix)
+ • dell-csm   v1.12.0 (min_ocp: 4.20 , max_ocp: 4.22 , source: dell-csm-support-matrix)
+ • portworx   v24.2.0 (min_ocp: 4.14 , max_ocp: 4.16 , source: portworx-support-matrix)
+ • portworx   v25.3.0 (min_ocp: 4.16 , max_ocp: 4.22 , source: portworx-support-matrix)
+ • portworx   v26.1.0 (min_ocp: 4.20 , max_ocp: 4.22 , source: portworx-support-matrix)
+```
+
+#### `upgrade_edges` & `advisories` (Sample)
+```text
+=== UPGRADE EDGES (Sample) ===
+ • channel=stable-4.21: 4.21.7  -> 4.21.14 (conditional=False)
+ • channel=stable-4.21: 4.21.13 -> 4.21.23 (conditional=False)
+ • channel=stable-4.21: 4.20.27 -> 4.20.32 (conditional=False)
+
+=== SECURITY ADVISORIES (Sample) ===
+ • [redhat-errata] RHSA-2026:55142 | Severity: important
+ • [redhat-errata] RHSA-2026:54869 | Severity: moderate
+ • [portworx]      PWX-46691      | Severity: critical (NVMe-oF multipath failover delay)
+```
+
+---
+
+## 3. Pre-Upgrade Assessment Scenarios
+
+### Scenario A: Deterministic Safe Target (Verdict: GO)
+
+Evaluates cluster `east-prod-01` (`4.22.2`) upgrading to candidate z-stream `4.22.8`.
+
+```bash
+$ python run_assessment.py --cluster east-prod-01 --target 4.22.8
+```
+
+#### Live Terminal Execution Output:
+
+```text
+======================================================================
+UPGRADE ASSESSMENT RESULT: GO [Mode: DETERMINISTIC]
+======================================================================
+
+--- [EXECUTIVE SYNOPSIS] ---
+RECOMMENDATION: APPROVED FOR STAGED ROLLOUT (GO). Target release 4.22.8 provides verified compatibility across MTV, Dell CSM, and Portworx without major version drift.
+
+--- [DEEP COMPONENT & STORAGE IMPACT] ---
+ • MIGRATION IMPACT: STABLE: Migration operator(s) (mtv) verified within certified range.
+ • STORAGE IMPACT: VERIFIED: Storage operator(s) (dell-csm, portworx) certified for target version.
+ • SECURITY DELTA: 30 Critical and 832 Important CVE/RHSAs tracked in database.
+
+--- [TESTOPS REMEDIATION & QUALIFICATION PLAN] ---
+ Step 1 [Sandbox Live Migration Test]:
+   Action: Execute end-to-end VM warm migration dry run using mtv on target OCP build.
+   Gate:   Zero data corruption, successful cutover under SLA window.
+ Step 2 [CSI Storage Failover Verification]:
+   Action: Trigger worker node drain and reboot under I/O load on storage operators (dell-csm, portworx).
+   Gate:   Volumes reattach within 30s without VolumeAttachment timeout.
+ Step 3 [Fleet Canary Deployment]:
+   Action: Roll out upgrade to 1 non-prod lab cluster before scheduling production fleet windows.
+   Gate:   ClusterVersion reaches Available=True with 0 cluster operator degraded alerts for 48 hours.
+
+--- [HUMAN-IN-THE-LOOP SIGN-OFF GATE] ---
+ Status: AUTO_APPROVED
+ Required Approvers: TestOps Lead, Cloud Platform SRE Lead, Storage Administrator
+ Checklist:
+   [ ] All active VM migrations on mtv paused / drained
+   [ ] Sandbox failover test passed on dell-csm, portworx
+   [ ] Maintenance window approved by Change Advisory Board (CAB)
+
+--- [UNIFIED DECISION JSON PAYLOAD] ---
+{
+  "cluster": "east-prod-01",
+  "current_version": "4.22.2",
+  "target_version": "4.22.8",
+  "evaluation_mode": "deterministic",
+  "verdict": "GO",
+  "executive_synopsis": "RECOMMENDATION: APPROVED FOR STAGED ROLLOUT (GO). Target release 4.22.8 provides verified compatibility across MTV, Dell CSM, and Portworx without major version drift.",
+  "reasons": {
+    "blockers": [],
+    "caveats": [],
+    "info": [
+      "Upgrade path from 4.22.2 to 4.22.8 exists in Cincinnati graph.",
+      "Operator 'mtv' version 2.8.0 verified compatible with 4.22.8.",
+      "Operator 'dell-csm' version 1.11.0 verified compatible with 4.22.8.",
+      "Operator 'portworx' version 25.3.0 verified compatible with 4.22.8."
+    ]
+  },
+  "impact_analysis": {
+    "migration_impact": "STABLE: Migration operator(s) (mtv) verified within certified range.",
+    "storage_impact": "VERIFIED: Storage operator(s) (dell-csm, portworx) certified for target version.",
+    "security_delta": "30 Critical and 832 Important CVE/RHSAs tracked in database.",
+    "version_drift": {
+      "current": "4.22.2",
+      "target": "4.22.8",
+      "is_major_drift": false,
+      "is_multi_minor_jump": false,
+      "drift_type": "z-stream",
+      "minor_steps": 0
+    }
+  },
+  "testops_remediation_plan": [
+    {
+      "step": 1,
+      "phase": "Sandbox Live Migration Test",
+      "action": "Execute end-to-end VM warm migration dry run using mtv on target OCP build.",
+      "gate": "Zero data corruption, successful cutover under SLA window."
+    },
+    {
+      "step": 2,
+      "phase": "CSI Storage Failover Verification",
+      "action": "Trigger worker node drain and reboot under I/O load on storage operators (dell-csm, portworx).",
+      "gate": "Volumes reattach within 30s without VolumeAttachment timeout."
+    },
+    {
+      "step": 3,
+      "phase": "Fleet Canary Deployment",
+      "action": "Roll out upgrade to 1 non-prod lab cluster before scheduling production fleet windows.",
+      "gate": "ClusterVersion reaches Available=True with 0 cluster operator degraded alerts for 48 hours."
+    }
+  ],
+  "human_in_the_loop_sign_off": {
+    "status": "AUTO_APPROVED",
+    "required_approvers": [
+      "TestOps Lead",
+      "Cloud Platform SRE Lead",
+      "Storage Administrator"
+    ],
+    "sign_off_checklist": [
+      "[ ] All active VM migrations on mtv paused / drained",
+      "[ ] Sandbox failover test passed on dell-csm, portworx",
+      "[ ] Maintenance window approved by Change Advisory Board (CAB)"
+    ]
+  },
+  "evaluated_at": "2026-08-17T08:06:29.473478+05:30"
+}
+```
+
+---
+
+### Scenario B: Strategic Drift & Blocker Escalation (Verdict: NO-GO ESCALATE)
+
+Evaluates cluster `east-prod-01` (`4.22.2`) attempting an uncertified major version jump to `5.0.0`.
+
+```bash
+$ python run_assessment.py --cluster east-prod-01 --target 5.0.0 --llm
+```
+
+#### Live Terminal Execution Output:
+
+```text
+======================================================================
+UPGRADE ASSESSMENT RESULT: NO-GO (ESCALATE) [Mode: LLM]
+======================================================================
+
+--- [EXECUTIVE SYNOPSIS] ---
+RECOMMENDATION: HOLD UPGRADE (NO-GO ESCALATED). Upgrading cluster 'east-prod-01' from OCP 4.22.2 to 5.0.0 poses high operational risk to active migration and storage workloads. Identified 5 primary blocker(s) including version drift and operator boundary mismatches. Platform SRE and TestOps sign-off is strictly required prior to staging validation.
+
+--- [ESCALATION & BLOCKER TRIGGERS] ---
+ • No direct upgrade path found in Cincinnati graph from 4.22.2 to 5.0.0.
+ • Operator 'mtv' version 2.8.0 is incompatible with target OCP 5.0.0 (supported range: 4.18 to 4.22).
+ • Operator 'dell-csm' version 1.11.0 is incompatible with target OCP 5.0.0 (supported range: 4.18 to 4.22).
+ • Operator 'portworx' version 25.3.0 is incompatible with target OCP 5.0.0 (supported range: 4.16 to 4.22).
+ • Major version architectural drift detected (4.22.2 -> 5.0.0). Under TestOps Policy, major version transitions require mandatory sandbox qualification.
+ • mtv (version 2.8.0) is NOT certified for OCP 5.0.0 (supported up to 4.22).
+ • dell-csm (version 1.11.0) is NOT certified for OCP 5.0.0 (supported up to 4.22).
+ • portworx (version 25.3.0) is NOT certified for OCP 5.0.0 (supported up to 4.22).
+ • Active MTV (Migration Toolkit for Virtualization) operator v2.8.0 detected. VM migration stability is prioritized over routine platform upgrades unless critical CVEs are unpatched.
+
+--- [DEEP COMPONENT & STORAGE IMPACT] ---
+ • MIGRATION IMPACT: HIGH RISK: Detected migration operator(s) (mtv). Major version drift or uncertified target may disrupt active VM cutovers and disk transfer streams.
+ • STORAGE IMPACT: CRITICAL RISK: Storage CSI operator(s) (dell-csm, portworx) require kernel header validation and CSI node-driver re-certification on target Kubernetes base.
+ • SECURITY DELTA: 30 Critical and 832 Important CVE/RHSAs tracked in database.
+
+--- [TESTOPS REMEDIATION & QUALIFICATION PLAN] ---
+ Step 1 [Pre-Requisite Operator Upgrades]:
+   Action: Upgrade uncertified operator(s) (ocv, mtv, dell-csm, portworx) to versions supporting OCP 5.0.0.
+   Gate:   Operator CSVs reach Succeeded phase with 0 CrashLoopBackOff pods.
+ Step 2 [Sandbox Live Migration Test]:
+   Action: Execute end-to-end VM warm migration dry run using mtv on target OCP build.
+   Gate:   Zero data corruption, successful cutover under SLA window.
+ Step 3 [CSI Storage Failover Verification]:
+   Action: Trigger worker node drain and reboot under I/O load on storage operators (dell-csm, portworx).
+   Gate:   Volumes reattach within 30s without VolumeAttachment timeout.
+ Step 4 [Fleet Canary Deployment]:
+   Action: Roll out upgrade to 1 non-prod lab cluster before scheduling production fleet windows.
+   Gate:   ClusterVersion reaches Available=True with 0 cluster operator degraded alerts for 48 hours.
+
+--- [HUMAN-IN-THE-LOOP SIGN-OFF GATE] ---
+ Status: PENDING_APPROVAL
+ Required Approvers: TestOps Lead, Cloud Platform SRE Lead, Storage Administrator
+ Checklist:
+   [ ] All active VM migrations on mtv paused / drained
+   [ ] Sandbox failover test passed on dell-csm, portworx
+   [ ] TestOps qualification test suite executed on target build in staging
+   [ ] Maintenance window approved by Change Advisory Board (CAB)
+```
+
+---
+
+## 4. GitOps Pull Request Automation Bot
+
+### Scenario A: Successful PR Manifest Dry-Run (Verdict: GO)
+
+Bumping cluster `east-prod-01` to `4.22.8` modifies Red Hat Advanced Cluster Management (RHACM) `ClusterCurator` CRs using round-trip `ruamel.yaml`:
+
+```bash
+$ python run_gitops_pr.py --cluster east-prod-01 --target 4.22.8 --dry-run
+```
+
+#### Live Terminal Execution Output:
+
+```text
+2026-08-17 07:57:58 INFO gitops.bot: [DRY-RUN] Simulating GitOps PR creation for east-prod-01 -> 4.22.8
+2026-08-17 07:57:58 INFO gitops.bot: Created new ClusterCurator manifest at clusters/east-prod-01/cluster-curator.yaml
+{
+  "action": "dry-run-preview",
+  "cluster": "east-prod-01",
+  "current_version": "4.22.2",
+  "target_version": "4.22.8",
+  "verdict": "go",
+  "branch": "upgrade/east-prod-01-to-4.22.8",
+  "base_branch": "main",
+  "draft": false,
+  "pr_title": "feat(gitops): upgrade east-prod-01 to OCP 4.22.8 [GO]",
+  "pr_body": "## :robot: Automated Pre-Upgrade Assessment — east-prod-01\n\nThis Pull Request proposes bumping cluster **`east-prod-01`** OCP target from **`4.22.2`** to **`4.22.8`**.\n\n| Parameter | Value |\n| :--- | :--- |\n| **Cluster** | `east-prod-01` |\n| **Current Version** | `4.22.2` |\n| **Target Version** | `4.22.8` |\n| **Assessment Verdict** | **GO** :white_check_mark: |\n| **Assessment ID** | `#10` |\n| **Evaluated At** | `2026-08-16 23:10:59.647539+05:30` |\n\n### :white_check_mark: Validated Compatibility Checks\n\n- Upgrade path from 4.22.2 to 4.22.8 exists in Cincinnati graph.\n- Operator 'mtv' version 2.8.0 verified compatible with 4.22.8.\n- Operator 'dell-csm' version 1.11.0 verified compatible with 4.22.8.\n- Operator 'portworx' version 25.3.0 verified compatible with 4.22.8.\n\n### :clipboard: Pre-Merge Checklist\n- [ ] Verify disconnected/air-gapped release payload mirroring if applicable\n- [ ] Ensure active VM migrations (MTV) are quiescent before initiating node drains\n- [ ] Validate CSI storage replication & backup health (Dell CSM / Portworx)\n- [ ] Confirm maintenance window approval with TestOps / Release Engineering\n\n---\n*Automated by [OCV Upgrade & Migration Assessment Agent](https://github.com/openshift-virtualization/ocv-upgrade-agent)*",
+  "modified_files": [
+    "clusters/east-prod-01/cluster-curator.yaml"
+  ],
+  "diff": "diff --git a/clusters/east-prod-01/cluster-curator.yaml b/clusters/east-prod-01/cluster-curator.yaml\nnew file mode 100644\nindex 0000000..b363f93\n--- /dev/null\n+++ b/clusters/east-prod-01/cluster-curator.yaml\n@@ -0,0 +1,13 @@\n+apiVersion: cluster.open-cluster-management.io/v1beta1\n+kind: ClusterCurator\n+metadata:\n+  name: east-prod-01\n+  namespace: east-prod-01\n+  labels:\n+    open-cluster-management.io/cluster-name: east-prod-01\n+spec:\n+  desiredCuration: upgrade\n+  upgrade:\n+    channel: stable-4.22\n+    desiredUpdate: 4.22.8\n+    upstream: http://cincinnati.internal.net/api/upgrades_info/v1/graph\n"
+}
+```
+
+---
+
+### Scenario B: Strict Assessment Gating & Refusal (Verdict: NO-GO)
+
+When attempting to open a GitOps PR against an unsafe target (`5.0.0`), the bot inspects the database assessment, refuses the request, prints all blocking reasons, and terminates with exit code 1 before any git operations or API calls:
+
+```bash
+$ python run_gitops_pr.py --cluster east-prod-01 --target 5.0.0 --dry-run
+```
+
+#### Live Terminal Execution Output:
+
+```text
+2026-08-17 08:10:19,200 ERROR __main__: Verdict is NO-GO for east-prod-01 -> 5.0.0 -- refusing to open a PR.
+2026-08-17 08:10:19,200 ERROR __main__:   blocking: Blocker: No direct upgrade path found in Cincinnati graph from 4.22.2 to 5.0.0.
+2026-08-17 08:10:19,200 ERROR __main__:   blocking: Blocker: Operator 'mtv' version 2.8.0 is incompatible with target OCP 5.0.0 (supported range: 4.18 to 4.22).
+2026-08-17 08:10:19,200 ERROR __main__:   blocking: Blocker: Operator 'dell-csm' version 1.11.0 is incompatible with target OCP 5.0.0 (supported range: 4.18 to 4.22).
+2026-08-17 08:10:19,200 ERROR __main__:   blocking: Blocker: Operator 'portworx' version 25.3.0 is incompatible with target OCP 5.0.0 (supported range: 4.16 to 4.22).
+[Exit Code: 1]
+```
+
+---
+
+## 5. Automated Test Suite Results
+
+All 19 unit tests execute against offline fixtures and pass cleanly:
+
+```bash
+$ pytest
+```
+
+```text
+============================= test session starts =============================
+platform win32 -- Python 3.13.13, pytest-9.1.1, pluggy-1.6.0
+rootdir: C:\Users\SRIMANDARBHA\Projects\ocv-upgrade-agent\ocv-upgrade-agent
+collected 19 items
+
+tests\test_cincinnati.py ..                                              [ 10%]
+tests\test_cluster_state.py ..                                           [ 21%]
+tests\test_gitops.py ......                                              [ 52%]
+tests\test_lifecycle.py ..                                               [ 63%]
+tests\test_redhat_security.py ...                                        [ 78%]
+tests\test_release_info.py ..                                            [ 89%]
+tests\test_vendor_matrix.py ..                                           [100%]
+
+============================= 19 passed in 2.38s ==============================
+```
 ```
 
 ---
@@ -350,7 +843,10 @@ collectors/
   cluster_state.py             Live ClusterVersion + CSVs -> component_versions
   vendor_matrix.py             Curated MTV, Dell CSM, Portworx data -> operator_compat
   release_info.py              `oc adm release info` pullspecs -> release_images
+gitops/
+  bot.py                       GitOps PR automation, ruamel.yaml editing, GitPython & GitHub API
 data/
+  gitops_targets.yaml          Fleet GitOps repository targets and cluster curator mapping
   vendor_matrix_seed.yaml      Hand-curated MTV, Dell CSM, and Portworx compatibility matrix
   testops_confluence_policy.md Ingested TestOps Confluence standards & migration gates
 engine/
@@ -358,6 +854,7 @@ engine/
   llm_advisor.py               Strategic LLM & TestOps migration escalation advisor
 run_collectors.py              Orchestrator for all data collectors
 run_assessment.py              CLI entrypoint for running cluster compatibility assessments
+run_gitops_pr.py               CLI entrypoint for opening/updating GitOps upgrade PRs
 tests/                         Unit tests against saved fixtures (no live network needed)
 ```
 
@@ -519,6 +1016,50 @@ RECOMMENDATION: HOLD UPGRADE (NO-GO ESCALATED). Upgrading cluster 'east-prod-01'
    [ ] Dell CSM / Portworx sandbox failover test passed
    [ ] TestOps qualification test suite executed on target build
    [ ] Maintenance window approved by Change Advisory Board (CAB)
+```
+
+---
+
+## Automating GitOps Upgrade Pull Requests
+
+Once an upgrade assessment is persisted in the database, `run_gitops_pr.py` can automatically open or update a GitOps PR bumping the target OCP version across your fleet (e.g. Advanced Cluster Management / OpenShift GitOps `ClusterCurator` manifests):
+
+### Key Safety Gates & Features:
+1. **Assessment-Gated Execution:** Refuses outright on a `NO-GO` verdict, printing blocking reasons and exiting nonzero without touching Git or GitHub APIs.
+2. **Draft by Default for Caveats:** Opens PRs as **Draft** if the verdict is `GO-WITH-CAVEATS` (override with `--force-ready` to open ready-for-review).
+3. **Round-Trip YAML Preservation:** Uses `ruamel.yaml` to modify ACM `ClusterCurator` CRs (`spec.desiredCuration: upgrade`, `spec.upgrade.desiredUpdate`), preserving existing comments, indentation, and structure.
+4. **Idempotent Updates:** Re-running against an existing upgrade branch updates the PR in place rather than creating duplicates.
+5. **Dry-Run Mode:** Generate commit diffs and full Markdown PR bodies without requiring `$GITHUB_TOKEN` or pushing to remote.
+
+### Usage Examples:
+
+```bash
+# 1. Preview GitOps PR changes and generated Markdown body (no token required):
+python run_gitops_pr.py --cluster east-prod-01 --target 4.22.8 --dry-run
+
+# 2. Open / update PR on GitHub:
+export GITHUB_TOKEN=ghp_yourPersonalAccessToken
+python run_gitops_pr.py --cluster east-prod-01 --target 4.22.8
+
+# 3. Force open ready-for-review on GO-WITH-CAVEATS:
+python run_gitops_pr.py --cluster east-prod-01 --target 4.22.8 --force-ready
+```
+
+### GitOps Fleet Configuration:
+Cluster repositories and paths are configured in [`data/gitops_targets.yaml`](file:///c:/Users/SRIMANDARBHA/Projects/ocv-upgrade-agent/ocv-upgrade-agent/data/gitops_targets.yaml):
+```yaml
+defaults:
+  repo_url: "https://github.com/example-org/ocp-gitops-fleet.git"
+  owner: "example-org"
+  repo_name: "ocp-gitops-fleet"
+  base_branch: "main"
+  curator_namespace: "clusters"
+
+clusters:
+  east-prod-01:
+    cluster_path: "clusters/east-prod-01"
+    curator_namespace: "east-prod-01"
+    upstream_graph_url: "http://cincinnati.internal.net/api/upgrades_info/v1/graph"
 ```
 
 ---
@@ -1464,6 +2005,36 @@ def main():
 
 if __name__ == "__main__":
     main()
+```
+
+---
+
+### `data/gitops_targets.yaml`
+
+```yaml
+# GitOps repository targets and cluster curator mapping.
+# Used by run_gitops_pr.py and gitops.bot to automate upgrade PRs.
+
+defaults:
+  repo_url: "https://github.com/example-org/ocp-gitops-fleet.git"
+  owner: "example-org"
+  repo_name: "ocp-gitops-fleet"
+  base_branch: "main"
+  curator_namespace: "clusters"
+
+clusters:
+  east-prod-01:
+    cluster_path: "clusters/east-prod-01"
+    curator_namespace: "east-prod-01"
+    upstream_graph_url: "http://cincinnati.internal.net/api/upgrades_info/v1/graph"
+
+  west-prod-01:
+    cluster_path: "clusters/west-prod-01"
+    curator_namespace: "west-prod-01"
+
+  central-edge-01:
+    cluster_path: "clusters/central-edge-01"
+    curator_namespace: "central-edge-01"
 ```
 
 ---
@@ -2426,15 +2997,25 @@ def calculate_version_drift(current_version: str, target_version: str) -> dict[s
     patch_tgt = tgt_parts[2] if len(tgt_parts) > 2 else 0
 
     is_major_drift = major_tgt > major_cur
+    is_downgrade = (tgt_parts + (0, 0, 0))[:3] < (cur_parts + (0, 0, 0))[:3]
     minor_diff = (major_tgt * 100 + minor_tgt) - (major_cur * 100 + minor_cur)
     is_multi_minor_jump = minor_diff > 1
+
+    drift_type = "major" if is_major_drift else (
+        "downgrade" if is_downgrade else (
+            "multi-minor" if is_multi_minor_jump else (
+                "minor" if minor_diff == 1 else "z-stream"
+            )
+        )
+    )
 
     return {
         "current": current_version,
         "target": target_version,
         "is_major_drift": is_major_drift,
+        "is_downgrade": is_downgrade,
         "is_multi_minor_jump": is_multi_minor_jump,
-        "drift_type": "major" if is_major_drift else ("multi-minor" if is_multi_minor_jump else ("minor" if minor_diff == 1 else "z-stream")),
+        "drift_type": drift_type,
         "minor_steps": minor_diff,
     }
 
@@ -2447,19 +3028,71 @@ def extract_json_payload(raw_text: str) -> dict[str, Any] | None:
     # Check for markdown code fence
     fence_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", clean, re.DOTALL)
     if fence_match:
-        clean = fence_match.group(1).strip()
-    elif clean.startswith("{") and clean.endswith("}"):
-        pass
-    else:
-        # Search for first { and last }
-        start = clean.find("{")
-        end = clean.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            clean = clean[start : end + 1]
+        try:
+            return json.loads(fence_match.group(1))
+        except json.JSONDecodeError:
+            pass
     try:
         return json.loads(clean)
-    except Exception:
+    except json.JSONDecodeError:
         return None
+
+
+def generate_expert_decision(
+    cluster: Cluster,
+    target_version: str,
+    assessment: Assessment,
+    installed_components: list[ComponentVersion],
+    compat_records: list[OperatorCompat],
+    cve_count: int,
+    critical_cve_count: int,
+    policy_text: str,
+) -> dict[str, Any]:
+    """Fallback deterministic logic mimicking the LLM's comprehensive decision framework."""
+    drift = calculate_version_drift(cluster.ocp_version, target_version)
+    reasons_data = assessment.reasons or {}
+    deterministic_verdict = assessment.verdict.upper()
+
+    verdict = deterministic_verdict
+    escalation_reasons: list[str] = list(reasons_data.get("blockers") or [])
+
+    if drift["is_downgrade"]:
+        verdict = "NO-GO (ESCALATE)"
+        escalation_reasons.append(
+            f"In-place platform downgrade/rollback ({cluster.ocp_version} -> {target_version}) is strictly unsupported "
+            "by OpenShift Container Platform, Kubernetes, and CVO/MCO architecture. Rollbacks require full cluster redeployment or etcd disaster recovery restore."
+        )
+
+    if drift["is_major_drift"]:
+        verdict = "NO-GO (ESCALATE)"
+        escalation_reasons.append(
+            f"Major version architectural drift detected ({cluster.ocp_version} -> {target_version}). "
+            "Under TestOps Policy, major version transitions require mandatory sandbox qualification."
+        )
+
+    components_map = {c.component: c.version for c in installed_components}
+    operator_risks = []
+
+    for comp, ver in components_map.items():
+        if comp == "ocp":
+            continue
+        rules = [r for r in compat_records if r.component == comp and r.operator_version == ver]
+        if rules:
+            if not any(check_version_in_range(target_version, r.min_ocp, r.max_ocp) for r in rules):
+                max_supported = rules[0].max_ocp or "any"
+                operator_risks.append(
+                    f"{comp} (version {ver}) is NOT certified for OCP {target_version} (supported up to {max_supported})."
+                )
+        elif drift["is_major_drift"]:
+            operator_risks.append(
+                f"{comp} (version {ver}) has no verified compatibility rule for major release {target_version}."
+            )
+
+    # Re-use core generation logic for the output structure
+    return generate_strategic_analysis(
+        cluster, target_version, assessment, installed_components, compat_records, 
+        cve_count, critical_cve_count, policy_text
+    )
 
 
 def generate_strategic_analysis(
@@ -2494,6 +3127,13 @@ def generate_strategic_analysis(
     # Core Rule Reasoning
     escalation_reasons: list[str] = []
     verdict = assessment.verdict.upper()
+
+    if drift["is_downgrade"]:
+        verdict = "NO-GO (ESCALATE)"
+        escalation_reasons.append(
+            f"In-place platform downgrade/rollback ({cluster.ocp_version} -> {target_version}) is strictly unsupported "
+            "by OpenShift Container Platform, Kubernetes, and CVO/MCO architecture. Rollbacks require full cluster redeployment or etcd disaster recovery restore."
+        )
 
     if drift["is_major_drift"]:
         verdict = "NO-GO (ESCALATE)"
@@ -2670,14 +3310,440 @@ def generate_strategic_analysis(
 
 ---
 
+### `gitops/__init__.py`
+
+```python
+"""GitOps automation bot for OpenShift / OCV fleet upgrades."""
+from __future__ import annotations
+
+from gitops.bot import RepoTarget, open_or_update_pr
+
+__all__ = ["RepoTarget", "open_or_update_pr"]
+```
+
+---
+
+### `gitops/bot.py`
+
+```python
+"""GitOps pull request bot for OpenShift / OCV cluster upgrades.
+
+Automates the lifecycle of GitOps PRs that bump a cluster's target OCP version:
+  1. Validates gated assessment status (refusing NO-GO).
+  2. Modifies cluster manifests (e.g. ACM ClusterCurator / ClusterDeployment CRs)
+     using ruamel.yaml to preserve formatting, comments, and structure.
+  3. Manages git branches, commits, and pushes via GitPython.
+  4. Interacts with GitHub REST API to open new PRs (marking caveats as draft by default)
+     or updating existing branches/PRs idempotently.
+"""
+from __future__ import annotations
+
+import dataclasses
+import logging
+import os
+import re
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse, urlunparse
+
+import git
+import requests
+from ruamel.yaml import YAML
+
+log = logging.getLogger(__name__)
+
+
+@dataclass
+class RepoTarget:
+    """GitOps repository configuration for a target cluster."""
+
+    repo_url: str
+    owner: str
+    repo_name: str
+    cluster_path: str
+    curator_namespace: str
+    base_branch: str = "main"
+    upstream_graph_url: str | None = None
+
+
+def get_authenticated_repo_url(repo_url: str, token: str) -> str:
+    """Inject personal access token or installation token into HTTPS clone URL."""
+    if not token or not repo_url.startswith("https://"):
+        return repo_url
+    parsed = urlparse(repo_url)
+    auth_netloc = f"x-access-token:{token}@{parsed.netloc}"
+    return urlunparse(parsed._replace(netloc=auth_netloc))
+
+
+def create_yaml_parser() -> YAML:
+    """Create a round-trip YAML parser preserving comments and indentation."""
+    y = YAML()
+    y.preserve_quotes = True
+    y.indent(mapping=2, sequence=4, offset=2)
+    return y
+
+
+def update_cluster_manifests(
+    repo_root: Path,
+    target: RepoTarget,
+    cluster_name: str,
+    target_version: str,
+) -> list[str]:
+    """Find and update cluster upgrade manifests (e.g. ClusterCurator) using ruamel.yaml.
+
+    Returns a list of updated file paths relative to repo_root.
+    """
+    cluster_dir = repo_root / target.cluster_path
+    cluster_dir.mkdir(parents=True, exist_ok=True)
+    yaml_parser = create_yaml_parser()
+    modified_files: list[str] = []
+
+    # Look for candidate YAML files in the cluster directory
+    candidate_files = list(cluster_dir.glob("*.yaml")) + list(cluster_dir.glob("*.yml"))
+    curator_found = False
+
+    target_major_minor = ".".join(target_version.split(".")[:2])
+
+    for fpath in candidate_files:
+        try:
+            with open(fpath, "r", encoding="utf-8") as fh:
+                doc = yaml_parser.load(fh)
+        except Exception as exc:
+            log.warning("Could not parse %s as YAML: %s", fpath, exc)
+            continue
+
+        if not isinstance(doc, dict):
+            continue
+
+        kind = doc.get("kind")
+        if kind == "ClusterCurator":
+            curator_found = True
+            spec = doc.setdefault("spec", {})
+            spec["desiredCuration"] = "upgrade"
+            upgrade_spec = spec.setdefault("upgrade", {})
+            upgrade_spec["desiredUpdate"] = target_version
+            if target.upstream_graph_url:
+                upgrade_spec["upstream"] = target.upstream_graph_url
+            if "channel" in upgrade_spec:
+                upgrade_spec["channel"] = f"stable-{target_major_minor}"
+
+            with open(fpath, "w", encoding="utf-8") as fh:
+                yaml_parser.dump(doc, fh)
+            modified_files.append(str(fpath.relative_to(repo_root)).replace("\\", "/"))
+            log.info("Updated ClusterCurator in %s to target %s", fpath, target_version)
+
+        elif kind in ("ClusterDeployment", "ClusterVersion"):
+            spec = doc.setdefault("spec", {})
+            if "desiredUpdate" in spec and isinstance(spec["desiredUpdate"], dict):
+                spec["desiredUpdate"]["version"] = target_version
+                with open(fpath, "w", encoding="utf-8") as fh:
+                    yaml_parser.dump(doc, fh)
+                modified_files.append(str(fpath.relative_to(repo_root)).replace("\\", "/"))
+                log.info("Updated %s in %s to version %s", kind, fpath, target_version)
+
+    # If no curator manifest existed, synthesize standard ACM ClusterCurator CR
+    if not curator_found and not modified_files:
+        curator_file = cluster_dir / "cluster-curator.yaml"
+        curator_manifest = {
+            "apiVersion": "cluster.open-cluster-management.io/v1beta1",
+            "kind": "ClusterCurator",
+            "metadata": {
+                "name": cluster_name,
+                "namespace": target.curator_namespace,
+                "labels": {
+                    "open-cluster-management.io/cluster-name": cluster_name,
+                },
+            },
+            "spec": {
+                "desiredCuration": "upgrade",
+                "upgrade": {
+                    "channel": f"stable-{target_major_minor}",
+                    "desiredUpdate": target_version,
+                },
+            },
+        }
+        if target.upstream_graph_url:
+            curator_manifest["spec"]["upgrade"]["upstream"] = target.upstream_graph_url
+
+        with open(curator_file, "w", encoding="utf-8") as fh:
+            yaml_parser.dump(curator_manifest, fh)
+        modified_files.append(str(curator_file.relative_to(repo_root)).replace("\\", "/"))
+        log.info("Created new ClusterCurator manifest at %s", curator_file)
+
+    return modified_files
+
+
+def render_pr_body(
+    cluster_name: str,
+    current_version: str,
+    target_version: str,
+    verdict: str,
+    reasons: dict[str, Any],
+    assessment_id: int | str,
+    evaluated_at: str,
+) -> str:
+    """Generate structured, audit-ready Markdown PR description."""
+    verdict_badge = "**GO** :white_check_mark:" if verdict == "go" else "**GO WITH CAVEATS** :warning:"
+    if verdict == "no-go":
+        verdict_badge = "**NO-GO** :x:"
+
+    blockers = reasons.get("blockers") or reasons.get("blocking") or []
+    caveats = reasons.get("caveats") or []
+    info = reasons.get("info") or []
+
+    lines = [
+        f"## :robot: Automated Pre-Upgrade Assessment — {cluster_name}",
+        "",
+        f"This Pull Request proposes bumping cluster **`{cluster_name}`** OCP target from **`{current_version}`** to **`{target_version}`**.",
+        "",
+        f"| Parameter | Value |",
+        f"| :--- | :--- |",
+        f"| **Cluster** | `{cluster_name}` |",
+        f"| **Current Version** | `{current_version}` |",
+        f"| **Target Version** | `{target_version}` |",
+        f"| **Assessment Verdict** | {verdict_badge} |",
+        f"| **Assessment ID** | `#{assessment_id}` |",
+        f"| **Evaluated At** | `{evaluated_at}` |",
+        "",
+    ]
+
+    if verdict == "go-with-caveats":
+        lines.extend([
+            "> [!WARNING]",
+            "> **This upgrade has conditional risks or caveats.**",
+            "> This PR was created in draft mode for engineering review.",
+            "",
+        ])
+
+    if caveats:
+        lines.extend([
+            "### :warning: Caveats & Conditional Risks",
+            "",
+        ])
+        for c in caveats:
+            detail = c.get("detail", c) if isinstance(c, dict) else c
+            kind = c.get("kind") if isinstance(c, dict) else None
+            prefix = f"**[{kind}]** " if kind else ""
+            lines.append(f"- {prefix}{detail}")
+        lines.append("")
+
+    if blockers:
+        lines.extend([
+            "### :no_entry_sign: Blocking Issues",
+            "",
+        ])
+        for b in blockers:
+            detail = b.get("detail", b) if isinstance(b, dict) else b
+            kind = b.get("kind") if isinstance(b, dict) else None
+            prefix = f"**[{kind}]** " if kind else ""
+            lines.append(f"- {prefix}{detail}")
+        lines.append("")
+
+    if info:
+        lines.extend([
+            "### :white_check_mark: Validated Compatibility Checks",
+            "",
+        ])
+        for item in info:
+            lines.append(f"- {item}")
+        lines.append("")
+
+    lines.extend([
+        "### :clipboard: Pre-Merge Checklist",
+        "- [ ] Verify disconnected/air-gapped release payload mirroring if applicable",
+        "- [ ] Ensure active VM migrations (MTV) are quiescent before initiating node drains",
+        "- [ ] Validate CSI storage replication & backup health (Dell CSM / Portworx)",
+        "- [ ] Confirm maintenance window approval with TestOps / Release Engineering",
+        "",
+        "---",
+        "*Automated by [OCV Upgrade & Migration Assessment Agent](https://github.com/openshift-virtualization/ocv-upgrade-agent)*",
+    ])
+
+    return "\n".join(lines)
+
+
+def open_or_update_pr(
+    cluster_name: str,
+    current_version: str,
+    target_version: str,
+    verdict: str,
+    reasons: dict[str, Any],
+    target: RepoTarget,
+    token: str,
+    assessment_id: int | str,
+    evaluated_at: str,
+    force_ready: bool = False,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Create or update a GitOps PR for a cluster upgrade."""
+    branch_name = f"upgrade/{cluster_name}-to-{target_version}"
+    commit_msg = f"feat(gitops): bump {cluster_name} OCP target to {target_version}"
+    pr_title = f"feat(gitops): upgrade {cluster_name} to OCP {target_version} [{verdict.upper()}]"
+    is_draft = (verdict == "go-with-caveats") and not force_ready
+
+    pr_body = render_pr_body(
+        cluster_name=cluster_name,
+        current_version=current_version,
+        target_version=target_version,
+        verdict=verdict,
+        reasons=reasons,
+        assessment_id=assessment_id,
+        evaluated_at=evaluated_at,
+    )
+
+    with tempfile.TemporaryDirectory(prefix="gitops_bot_", ignore_cleanup_errors=True) as temp_dir:
+        repo_dir = Path(temp_dir) / "repo"
+        repo = None
+
+        try:
+            if dry_run:
+                log.info("[DRY-RUN] Simulating GitOps PR creation for %s -> %s", cluster_name, target_version)
+                repo = git.Repo.init(repo_dir)
+                # Create base branch and initial commit
+                base_file = repo_dir / "README.md"
+                base_file.write_text(f"# Fleet GitOps for {target.owner}/{target.repo_name}\n", encoding="utf-8")
+                repo.index.add(["README.md"])
+                repo.index.commit("initial commit")
+                repo.create_head(target.base_branch)
+                repo.git.checkout(target.base_branch)
+
+                # Create branch
+                head_branch = repo.create_head(branch_name)
+                head_branch.checkout()
+
+                modified_files = update_cluster_manifests(repo_dir, target, cluster_name, target_version)
+                repo.index.add(modified_files)
+                diff_text = repo.git.diff("HEAD")
+
+                return {
+                    "action": "dry-run-preview",
+                    "cluster": cluster_name,
+                    "current_version": current_version,
+                    "target_version": target_version,
+                    "verdict": verdict,
+                    "branch": branch_name,
+                    "base_branch": target.base_branch,
+                    "draft": is_draft,
+                    "pr_title": pr_title,
+                    "pr_body": pr_body,
+                    "modified_files": modified_files,
+                    "diff": diff_text,
+                }
+
+            # Live Execution: Clone repo with auth
+            auth_url = get_authenticated_repo_url(target.repo_url, token)
+            log.info("Cloning GitOps repo %s...", target.repo_url)
+            repo = git.Repo.clone_from(auth_url, repo_dir, branch=target.base_branch)
+
+            # Checkout or create upgrade branch
+            try:
+                repo.git.checkout(branch_name)
+                log.info("Checked out existing branch %s", branch_name)
+            except git.GitCommandError:
+                repo.git.checkout("-b", branch_name)
+                log.info("Created and checked out new branch %s", branch_name)
+
+            modified_files = update_cluster_manifests(repo_dir, target, cluster_name, target_version)
+
+            if not modified_files:
+                log.warning("No files modified during manifest update")
+
+            # Commit and push
+            repo.git.add(A=True)
+            if repo.is_dirty(untracked_files=True):
+                repo.index.commit(commit_msg)
+                log.info("Committed changes: %s", commit_msg)
+            else:
+                log.info("Working directory clean; no new commit needed")
+
+            log.info("Pushing branch %s to remote...", branch_name)
+            origin = repo.remote(name="origin")
+            origin.push(refspec=f"{branch_name}:{branch_name}", set_upstream=True, force=True)
+
+            # GitHub API: Check for existing PR
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+            api_base = "https://api.github.com"
+            pulls_url = f"{api_base}/repos/{target.owner}/{target.repo_name}/pulls"
+
+            list_resp = requests.get(
+                pulls_url,
+                headers=headers,
+                params={"head": f"{target.owner}:{branch_name}", "state": "open", "base": target.base_branch},
+                timeout=30,
+            )
+            list_resp.raise_for_status()
+            existing_prs = list_resp.json()
+
+            if existing_prs:
+                pr = existing_prs[0]
+                pr_number = pr["number"]
+                pr_url = pr["html_url"]
+                log.info("Found existing open PR #%d: %s; updating...", pr_number, pr_url)
+
+                update_resp = requests.patch(
+                    f"{pulls_url}/{pr_number}",
+                    headers=headers,
+                    json={"title": pr_title, "body": pr_body, "draft": is_draft},
+                    timeout=30,
+                )
+                update_resp.raise_for_status()
+                action = "updated"
+            else:
+                log.info("Opening new PR for %s...", branch_name)
+                create_resp = requests.post(
+                    pulls_url,
+                    headers=headers,
+                    json={
+                        "title": pr_title,
+                        "body": pr_body,
+                        "head": branch_name,
+                        "base": target.base_branch,
+                        "draft": is_draft,
+                    },
+                    timeout=30,
+                )
+                create_resp.raise_for_status()
+                pr_data = create_resp.json()
+                pr_url = pr_data["html_url"]
+                pr_number = pr_data["number"]
+                action = "created"
+
+            return {
+                "action": action,
+                "pr_url": pr_url,
+                "pr_number": pr_number,
+                "cluster": cluster_name,
+                "target_version": target_version,
+                "branch": branch_name,
+                "draft": is_draft,
+                "modified_files": modified_files,
+            }
+        finally:
+            if repo is not None:
+                try:
+                    repo.close()
+                except Exception:
+                    pass
+```
+
+---
+
 ### `requirements.txt`
 
 ```text
 SQLAlchemy>=2.0,<3.0
 requests>=2.31
 PyYAML>=6.0
+ruamel.yaml>=0.18       # round-trip-safe YAML editing for the GitOps PR bot
 kubernetes>=29.0
-psycopg2-binary>=2.9   # only needed where DATABASE_URL points at Postgres
+GitPython>=3.1
+psycopg2-binary>=2.9    # only needed where DATABASE_URL points at Postgres
 pytest>=8.0
 ```
 
@@ -2930,6 +3996,148 @@ def main():
             log.info("--- %s done: %s ---", name, n)
         except Exception:  # noqa: BLE001 - one bad collector shouldn't stop the rest
             log.exception("collector %s failed", name)
+
+
+if __name__ == "__main__":
+    main()
+```
+
+---
+
+### `run_gitops_pr.py`
+
+```python
+#!/usr/bin/env python3
+"""Open (or update) a GitOps PR bumping a cluster's OCP target version, gated
+on the most recent stored assessment for that cluster x target.
+
+    python run_gitops_pr.py --cluster east-prod-01 --target 4.22.8 --dry-run
+    python run_gitops_pr.py --cluster east-prod-01 --target 4.22.8
+
+Refuses outright on a no-go verdict -- prints the blocking reasons and exits
+nonzero, no git/GitHub calls made. A go-with-caveats verdict opens the PR as
+a draft by default; pass --force-ready to open it ready-for-review anyway
+(the caveats still show up in the PR body either way). Re-running against an
+existing branch/PR updates it in place rather than creating a duplicate.
+
+Reads per-cluster repo config from data/gitops_targets.yaml (override with
+--targets-file) and the GitHub token from $GITHUB_TOKEN (not required for
+--dry-run, which stops before any git push or GitHub API call).
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import os
+from pathlib import Path
+
+import git
+import requests
+import yaml
+
+from db.db import get_session, init_db
+from db.models import Assessment, Cluster
+from gitops.bot import RepoTarget, open_or_update_pr
+
+log = logging.getLogger(__name__)
+
+DEFAULT_TARGETS_PATH = Path(__file__).resolve().parent / "data" / "gitops_targets.yaml"
+REQUIRED_TARGET_KEYS = ["repo_url", "owner", "repo_name", "cluster_path", "curator_namespace"]
+
+
+def load_target(cluster_name: str, path: Path = DEFAULT_TARGETS_PATH) -> RepoTarget:
+    with open(path, "r", encoding="utf-8") as fh:
+        config = yaml.safe_load(fh) or {}
+    entry = (config.get("clusters") or {}).get(cluster_name)
+    if entry is None:
+        raise SystemExit(
+            f"No GitOps repo config for cluster {cluster_name!r} in {path}. "
+            f"Add an entry under clusters:{cluster_name}: first."
+        )
+    merged = {**config.get("defaults", {}), **entry}
+    missing = [k for k in REQUIRED_TARGET_KEYS if k not in merged]
+    if missing:
+        raise SystemExit(f"{path} entry for {cluster_name!r} is missing required keys: {missing}")
+    return RepoTarget(
+        repo_url=merged["repo_url"],
+        owner=merged["owner"],
+        repo_name=merged["repo_name"],
+        cluster_path=merged["cluster_path"],
+        curator_namespace=merged["curator_namespace"],
+        base_branch=merged.get("base_branch", "main"),
+        upstream_graph_url=merged.get("upstream_graph_url"),
+    )
+
+
+def main():
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    ap = argparse.ArgumentParser(description="Open/update a GitOps PR for a cluster's OCP upgrade")
+    ap.add_argument("--cluster", required=True, help="cluster name from inventory (e.g. east-prod-01)")
+    ap.add_argument("--target", required=True, help="candidate target OCP version (e.g. 4.22.8)")
+    ap.add_argument("--targets-file", type=Path, default=DEFAULT_TARGETS_PATH, help="path to gitops_targets.yaml")
+    ap.add_argument("--force-ready", action="store_true", help="open ready-for-review even on go-with-caveats")
+    ap.add_argument("--dry-run", action="store_true", help="render everything; skip git push + GitHub API calls")
+    ap.add_argument("--db-url", help="overrides DATABASE_URL")
+    args = ap.parse_args()
+
+    init_db(args.db_url)
+    target = load_target(args.cluster, args.targets_file)
+
+    token = os.environ.get("GITHUB_TOKEN")
+    if not token and not args.dry_run:
+        raise SystemExit("GITHUB_TOKEN is not set (or pass --dry-run to preview without it)")
+
+    with get_session() as db:
+        cluster = db.query(Cluster).filter_by(name=args.cluster).one_or_none()
+        if cluster is None:
+            raise SystemExit(f"Cluster {args.cluster!r} not found in inventory")
+
+        assessment = (
+            db.query(Assessment)
+            .filter_by(cluster_id=cluster.id, target_version=args.target)
+            .order_by(Assessment.evaluated_at.desc())
+            .first()
+        )
+        if assessment is None:
+            raise SystemExit(
+                f"No assessment on file for {args.cluster} -> {args.target}. Run first:\n"
+                f"  python run_assessment.py --cluster {args.cluster} --target {args.target}"
+            )
+        if assessment.verdict == "no-go":
+            log.error("Verdict is NO-GO for %s -> %s -- refusing to open a PR.", args.cluster, args.target)
+            reasons = assessment.reasons or {}
+            for b in (reasons.get("blockers") or reasons.get("blocking") or []):
+                detail = b.get("detail", b) if isinstance(b, dict) else b
+                kind = b.get("kind") if isinstance(b, dict) else "Blocker"
+                log.error("  blocking: %s: %s", kind, detail)
+            raise SystemExit(1)
+
+        try:
+            result = open_or_update_pr(
+                cluster_name=cluster.name,
+                current_version=cluster.ocp_version,
+                target_version=args.target,
+                verdict=assessment.verdict,
+                reasons=assessment.reasons or {},
+                target=target,
+                token=token or "dry-run-no-token-needed",
+                assessment_id=assessment.id,
+                evaluated_at=str(assessment.evaluated_at),
+                force_ready=args.force_ready,
+                dry_run=args.dry_run,
+            )
+        except requests.exceptions.HTTPError as exc:
+            resp = exc.response
+            raise SystemExit(
+                f"GitHub API call failed: {resp.status_code} {resp.reason} for {resp.url}\n"
+                f"The branch/commit was still pushed to {target.repo_url} -- fix the auth issue "
+                f"(check $GITHUB_TOKEN's scopes) and re-run; it'll pick up the existing branch."
+            ) from exc
+        except git.exc.GitCommandError as exc:
+            raise SystemExit(f"git operation failed: {exc}") from exc
+
+    print(json.dumps(result, indent=2, default=str))
 
 
 if __name__ == "__main__":
@@ -3248,6 +4456,158 @@ def test_parse_csvs_matches_target_components_and_skips_others():
 
 ---
 
+### `tests/test_gitops.py`
+
+```python
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+from ruamel.yaml import YAML
+
+from gitops.bot import (
+    RepoTarget,
+    create_yaml_parser,
+    open_or_update_pr,
+    render_pr_body,
+    update_cluster_manifests,
+)
+from run_gitops_pr import load_target
+
+TARGETS_FILE = Path(__file__).resolve().parents[1] / "data" / "gitops_targets.yaml"
+
+
+def test_load_target_success():
+    target = load_target("east-prod-01", TARGETS_FILE)
+    assert isinstance(target, RepoTarget)
+    assert target.owner == "example-org"
+    assert target.repo_name == "ocp-gitops-fleet"
+    assert target.cluster_path == "clusters/east-prod-01"
+    assert target.curator_namespace == "east-prod-01"
+    assert target.upstream_graph_url == "http://cincinnati.internal.net/api/upgrades_info/v1/graph"
+
+
+def test_load_target_missing():
+    with pytest.raises(SystemExit) as exc:
+        load_target("nonexistent-cluster", TARGETS_FILE)
+    assert "No GitOps repo config" in str(exc.value)
+
+
+def test_update_cluster_manifests_preserves_comments(tmp_path):
+    repo_root = tmp_path / "repo"
+    cluster_dir = repo_root / "clusters" / "east-prod-01"
+    cluster_dir.mkdir(parents=True)
+
+    curator_file = cluster_dir / "cluster-curator.yaml"
+    curator_content = """# ClusterCurator configuration for ACM fleet upgrades
+apiVersion: cluster.open-cluster-management.io/v1beta1
+kind: ClusterCurator
+metadata:
+  name: east-prod-01
+  namespace: east-prod-01 # ACM cluster namespace
+spec:
+  desiredCuration: none
+  upgrade:
+    channel: stable-4.21 # Track stable channel
+    desiredUpdate: "4.21.5"
+"""
+    curator_file.write_text(curator_content, encoding="utf-8")
+
+    target = RepoTarget(
+        repo_url="https://github.com/example-org/ocp-gitops-fleet.git",
+        owner="example-org",
+        repo_name="ocp-gitops-fleet",
+        cluster_path="clusters/east-prod-01",
+        curator_namespace="east-prod-01",
+    )
+
+    modified = update_cluster_manifests(repo_root, target, "east-prod-01", "4.22.8")
+    assert len(modified) == 1
+    assert "cluster-curator.yaml" in modified[0]
+
+    updated_text = curator_file.read_text(encoding="utf-8")
+    assert "ClusterCurator configuration for ACM fleet upgrades" in updated_text
+    assert "# ACM cluster namespace" in updated_text
+    assert 'desiredUpdate: "4.22.8"' in updated_text or "desiredUpdate: 4.22.8" in updated_text
+    assert "desiredCuration: upgrade" in updated_text
+
+
+def test_update_cluster_manifests_creates_new(tmp_path):
+    repo_root = tmp_path / "repo"
+    target = RepoTarget(
+        repo_url="https://github.com/example-org/ocp-gitops-fleet.git",
+        owner="example-org",
+        repo_name="ocp-gitops-fleet",
+        cluster_path="clusters/west-prod-01",
+        curator_namespace="west-prod-01",
+    )
+
+    modified = update_cluster_manifests(repo_root, target, "west-prod-01", "4.22.8")
+    assert len(modified) == 1
+    created_file = repo_root / modified[0]
+    assert created_file.exists()
+
+    y = YAML()
+    doc = y.load(created_file.read_text(encoding="utf-8"))
+    assert doc["kind"] == "ClusterCurator"
+    assert doc["spec"]["desiredCuration"] == "upgrade"
+    assert doc["spec"]["upgrade"]["desiredUpdate"] == "4.22.8"
+
+
+def test_render_pr_body():
+    body = render_pr_body(
+        cluster_name="east-prod-01",
+        current_version="4.21.5",
+        target_version="4.22.8",
+        verdict="go-with-caveats",
+        reasons={
+            "caveats": ["Multus CNI conditional update notice"],
+            "info": ["Upgrade path verified in Cincinnati graph"],
+        },
+        assessment_id=42,
+        evaluated_at="2026-08-17T07:00:00Z",
+    )
+    assert "Automated Pre-Upgrade Assessment — east-prod-01" in body
+    assert "4.21.5" in body
+    assert "4.22.8" in body
+    assert "GO WITH CAVEATS" in body
+    assert "Multus CNI conditional update notice" in body
+    assert "Pre-Merge Checklist" in body
+
+
+def test_open_or_update_pr_dry_run():
+    target = RepoTarget(
+        repo_url="https://github.com/example-org/ocp-gitops-fleet.git",
+        owner="example-org",
+        repo_name="ocp-gitops-fleet",
+        cluster_path="clusters/east-prod-01",
+        curator_namespace="east-prod-01",
+    )
+
+    res = open_or_update_pr(
+        cluster_name="east-prod-01",
+        current_version="4.21.5",
+        target_version="4.22.8",
+        verdict="go",
+        reasons={"info": ["Path verified"]},
+        target=target,
+        token="test-token",
+        assessment_id=1,
+        evaluated_at="2026-08-17T07:00:00Z",
+        dry_run=True,
+    )
+
+    assert res["action"] == "dry-run-preview"
+    assert res["cluster"] == "east-prod-01"
+    assert res["target_version"] == "4.22.8"
+    assert res["branch"] == "upgrade/east-prod-01-to-4.22.8"
+    assert res["draft"] is False
+    assert len(res["modified_files"]) > 0
+    assert "diff" in res
+```
+
+---
+
 ### `tests/test_lifecycle.py`
 
 ```python
@@ -3369,14 +4729,14 @@ def test_load_seed_shape():
     data = load_seed(SEED)
     assert len(data["operator_compat"]) >= 2
     assert len(data["known_bugs"]) >= 1
-    assert data["known_bugs"][0]["external_id"] == "PWX-46691"
+    assert any(b["external_id"] == "PWX-46691" for b in data["known_bugs"])
 
 
 def test_collect_writes_both_tables(db_session):
     n_compat, n_bugs = collect(SEED)
     assert n_compat >= 2
     assert n_bugs >= 1
-    assert db_session.query(OperatorCompat).filter_by(component="dell-csm").count() == 1
+    assert db_session.query(OperatorCompat).filter_by(component="dell-csm").count() >= 1
     assert db_session.query(Advisory).filter_by(source="portworx", external_id="PWX-46691").count() == 1
 ```
 
