@@ -53,15 +53,19 @@ It combines:
 ```text
 db/
   schema.sql                   Postgres DDL (source of truth for prod)
+  postgres_seed_4.20_to_4.22.sql Complete PostgreSQL DDL + 4.20->4.22 seed dataset
   models.py                    SQLAlchemy models (Postgres + SQLite portable)
   db.py                        Engine & session factory, auto-loads .env
 collectors/
   redhat_security.py           CVE + CSAF/errata -> advisories
   lifecycle.py                 GA/EOL dates      -> product_lifecycle
-  cincinnati.py                Upgrade graph + conditional risks -> upgrade_edges
-  cluster_state.py             Live ClusterVersion + CSVs -> component_versions
-  vendor_matrix.py             Curated MTV, Dell CSM, Portworx data -> operator_compat
-  release_info.py              `oc adm release info` pullspecs -> release_images
+  cincinnati.py                OSUS upgrade graph-> upgrade_edges
+  vendor_matrix.py             Dell/Portworx/MTV -> operator_compat
+  cluster_state.py             Live cluster state-> component_versions
+  release_info.py              Release images    -> release_images
+scripts/
+  load_postgres_seed.py        One-step loader for PostgreSQL disconnected DB seed
+  bundle_project.py            Comprehensive project exporter / packager
 gitops/
   bot.py                       GitOps PR automation, ruamel.yaml editing, GitPython & GitHub API
 data/
