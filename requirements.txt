@@ -6,3 +6,4 @@ kubernetes>=29.0
 GitPython>=3.1
 psycopg2-binary>=2.9    # only needed where DATABASE_URL points at Postgres
 pytest>=8.0
+

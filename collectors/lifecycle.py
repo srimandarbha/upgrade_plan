@@ -15,7 +15,6 @@ import logging
 from datetime import date, datetime
 
 import requests
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -86,9 +85,7 @@ def _parse_item(item: dict, component: str) -> dict:
 def upsert_lifecycle(session: Session, rows: list[dict]) -> int:
     if not rows:
         return 0
-    dialect = session.get_bind().dialect.name
-    insert_fn = pg_insert if dialect == "postgresql" else sqlite_insert
-    stmt = insert_fn(ProductLifecycle).values(rows)
+    stmt = pg_insert(ProductLifecycle).values(rows)
     update_cols = {c: getattr(stmt.excluded, c) for c in rows[0] if c not in ("component", "version")}
     stmt = stmt.on_conflict_do_update(index_elements=["component", "version"], set_=update_cols)
     session.execute(stmt)

@@ -1,9 +1,4 @@
-"""SQLAlchemy models mirroring db/schema.sql.
-
-Uses the generic `JSON` type (not Postgres-specific JSONB) so the same models
-work against SQLite for local dev/tests and Postgres in production -- see
-schema.sql for the JSONB-flavored DDL used for the real deployment.
-"""
+"""SQLAlchemy models for PostgreSQL mirroring db/schema.sql."""
 from __future__ import annotations
 
 import datetime as dt
@@ -144,7 +139,7 @@ class ReleaseImage(Base):
 
 
 class Assessment(Base):
-    """Written by the compatibility engine (next milestone)."""
+    """Written by the compatibility engine."""
 
     __tablename__ = "assessments"
 

@@ -23,7 +23,6 @@ import logging
 from datetime import datetime, timezone
 
 import requests
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -123,9 +122,7 @@ def upsert_advisories(session: Session, rows: list[dict]) -> int:
     """Upsert on (source, external_id). Returns count written."""
     if not rows:
         return 0
-    dialect = session.get_bind().dialect.name
-    insert_fn = pg_insert if dialect == "postgresql" else sqlite_insert
-    stmt = insert_fn(Advisory).values(rows)
+    stmt = pg_insert(Advisory).values(rows)
     update_cols = {c: getattr(stmt.excluded, c) for c in rows[0] if c not in ("source", "external_id")}
     stmt = stmt.on_conflict_do_update(
         index_elements=["source", "external_id"], set_=update_cols

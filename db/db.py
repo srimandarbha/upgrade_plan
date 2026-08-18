@@ -1,8 +1,7 @@
-"""Engine/session management.
+"""Engine/session management for PostgreSQL.
 
-DATABASE_URL examples:
-    sqlite:///./ocv_agent.db                                   (local dev/tests)
-    postgresql+psycopg2://user:pass@pg-host:5432/ocv_agent      (real deployment)
+DATABASE_URL example:
+    postgresql+psycopg2://postgres:postgres@localhost:5432/ocv_agent
 """
 from __future__ import annotations
 
@@ -15,7 +14,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from db.models import Base
 
-DEFAULT_URL = "sqlite:///./ocv_agent.db"
+DEFAULT_URL = "postgresql+psycopg2://postgres:postgres@localhost:5432/ocv_agent"
 
 
 def _load_env_file():
@@ -43,8 +42,7 @@ _load_env_file()
 
 def make_engine(url: str | None = None):
     url = url or os.environ.get("DATABASE_URL", DEFAULT_URL)
-    connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
-    return create_engine(url, connect_args=connect_args, future=True)
+    return create_engine(url, future=True)
 
 
 _engine = None
@@ -75,3 +73,4 @@ def get_session() -> Iterator[Session]:
         raise
     finally:
         session.close()
+

@@ -24,7 +24,6 @@ import json
 import logging
 import subprocess
 
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -68,9 +67,7 @@ def parse_release_images(metadata: dict) -> list[dict]:
 def upsert_release_images(session: Session, rows: list[dict]) -> int:
     if not rows:
         return 0
-    dialect = session.get_bind().dialect.name
-    insert_fn = pg_insert if dialect == "postgresql" else sqlite_insert
-    stmt = insert_fn(ReleaseImage).values(rows)
+    stmt = pg_insert(ReleaseImage).values(rows)
     update_cols = {c: getattr(stmt.excluded, c) for c in rows[0] if c not in ("version", "component")}
     stmt = stmt.on_conflict_do_update(index_elements=["version", "component"], set_=update_cols)
     session.execute(stmt)

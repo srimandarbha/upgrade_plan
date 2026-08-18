@@ -54,7 +54,7 @@ It combines:
 db/
   schema.sql                   Postgres DDL (source of truth for prod)
   postgres_seed_4.20_to_4.22.sql Complete PostgreSQL DDL + 4.20->4.22 seed dataset
-  models.py                    SQLAlchemy models (Postgres + SQLite portable)
+  models.py                    SQLAlchemy models (PostgreSQL)
   db.py                        Engine & session factory, auto-loads .env
 collectors/
   redhat_security.py           CVE + CSAF/errata -> advisories

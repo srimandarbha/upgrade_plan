@@ -1,21 +1,26 @@
 #!/usr/bin/env python3
-"""Run an automated upgrade assessment for one cluster x candidate target version.
+"""Run a GO / GO-WITH-CAVEATS / NO-GO assessment for one cluster x candidate target.
 
-Unified Assessment Engine:
-  - Default: Deterministic evaluation (fast, 100% rule-based facts check)
-  - With --llm: LLM-driven decision & reasoning (via local/remote LLM endpoint)
-
-Both modes output the exact same JSON decision schema.
-
-Examples:
-    # 1. Deterministic Mode (Default):
     python run_assessment.py --cluster east-prod-01 --target 4.22.8
-
-    # 2. LLM Mode (Local LLM thinking):
+    python run_assessment.py --cluster east-prod-01 --target 4.22.8 --kubeconfig ~/.kube/fleet
     python run_assessment.py --cluster east-prod-01 --target 4.22.8 --llm
 
-    # 3. Pure JSON Output (for CI/CD pipelines & GitOps bots):
-    python run_assessment.py --cluster east-prod-01 --target 4.22.8 --json
+With --kubeconfig (or a kubeconfig_context already set on the cluster row),
+this attempts a live ClusterVersion read first via collectors.cluster_state,
+so conditional-update risk caveats are the CVO's own confirmed-applicable
+answer rather than the weaker graph-only "this risk exists on this edge in
+general" fallback. Live read failures degrade to that fallback rather than
+aborting the assessment.
+
+--llm adds an LLM layer ON TOP of the deterministic result -- it never
+replaces it. See llm/ for the guardrails: a narrative summary is validated
+against this exact reasons dict before being stored (dropped, not shown, if
+it fails validation), and any LLM-proposed extra caveats can only push a `go`
+toward `go-with-caveats` -- never touch a blocking reason, never move a
+verdict back toward `go`. Point $LLM_BASE_URL at whatever OpenAI-compatible
+endpoint you actually have reachable (local vLLM/llama.cpp/Ollama, or a
+hosted one) -- see llm/client.py. Without --llm, behavior is unchanged from
+before this existed.
 """
 from __future__ import annotations
 
@@ -23,39 +28,30 @@ import argparse
 import json
 import logging
 
+from db.db import get_session, init_db
+from db.models import Cluster
+from engine.compatibility import assess
+
 log = logging.getLogger(__name__)
 
 
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    ap = argparse.ArgumentParser(
-        description="Run an automated GO / GO-WITH-CAVEATS / NO-GO upgrade compatibility assessment."
-    )
-    ap.add_argument("--cluster", required=True, help="cluster name from inventory (e.g. east-prod-01)")
-    ap.add_argument("--target", required=True, help="candidate target OCP version (e.g. 4.22.8 or 5.0.0)")
-    ap.add_argument("--llm", action="store_true", help="use LLM for decision reasoning and analysis (default: deterministic)")
-    ap.add_argument("--llm-url", default="http://127.0.0.1:8080/v1/chat/completions", help="local or remote LLM endpoint URL")
-    ap.add_argument("--json", action="store_true", help="output strictly raw JSON (ideal for GitOps bots & scripts)")
-    ap.add_argument("--confluence-page-id", help="placeholder: Confluence Page ID for API ingestion")
-    ap.add_argument("--confluence-url", help="placeholder: Confluence Base URL")
-    ap.add_argument("--kubeconfig", help="path to kubeconfig for live ClusterVersion inspection")
-    ap.add_argument("--db-url", help="overrides DATABASE_URL")
+    ap = argparse.ArgumentParser(description="Run an upgrade compatibility assessment for one cluster")
+    ap.add_argument("--cluster", required=True)
+    ap.add_argument("--target", required=True, help="candidate OCP version, e.g. 4.22.8")
+    ap.add_argument("--kubeconfig", help="attempt a live ClusterVersion read before falling back to DB-only")
+    ap.add_argument("--llm", action="store_true", help="add an LLM narrative + optional extra caveats (additive only)")
+    ap.add_argument("--llm-base-url", help="overrides $LLM_BASE_URL for this run")
+    ap.add_argument("--db-url")
     args = ap.parse_args()
-
-    from db.db import get_session, init_db
-    from db.models import Advisory, Cluster, ComponentVersion, OperatorCompat
-    from engine.compatibility import assess
-    from engine.llm_advisor import generate_strategic_analysis, load_testops_policy
 
     init_db(args.db_url)
 
     with get_session() as db:
         cluster = db.query(Cluster).filter_by(name=args.cluster).one_or_none()
         if cluster is None:
-            raise SystemExit(
-                f"Cluster {args.cluster!r} not found in inventory. "
-                "Add it to the 'clusters' table first or run collectors.cluster_state."
-            )
+            raise SystemExit(f"Cluster {args.cluster!r} not found in inventory")
 
         live_conditional_updates = None
         if args.kubeconfig or cluster.kubeconfig_context:
@@ -66,71 +62,44 @@ def main():
                 live = parse_clusterversion(fetch_clusterversion(api))
                 live_conditional_updates = live["conditional_updates"]
                 log.info("Live ClusterVersion read OK (%d conditional risks reported)", len(live_conditional_updates))
-            except Exception as exc:  # noqa: BLE001 - degrade gracefully, don't abort
-                log.warning("Live read failed (%s); falling back to database graph risk data", exc)
+            except Exception as exc:  # noqa: BLE001 - degrade gracefully, don't abort the assessment
+                log.warning("Live read failed (%s); falling back to graph-only risk data", exc)
 
+        # Deterministic verdict -- this is the authoritative result regardless
+        # of what happens below.
         row = assess(db, cluster, args.target, live_conditional_updates=live_conditional_updates)
 
-        installed = (
-            db.query(ComponentVersion)
-            .filter(ComponentVersion.cluster_id == cluster.id)
-            .all()
-        )
-        compat_records = db.query(OperatorCompat).all()
-        cve_count = db.query(Advisory).filter(Advisory.severity == "important").count()
-        crit_cve_count = db.query(Advisory).filter(Advisory.severity == "critical").count()
-        policy_text = load_testops_policy()
+        if args.llm:
+            from llm.caveats import apply_additional_caveats, generate_additional_caveats
+            from llm.client import LLMConfig
+            from llm.narrate import generate_narrative
 
-        decision_payload = generate_strategic_analysis(
-            cluster=cluster,
-            target_version=args.target,
-            assessment=row,
-            installed_components=installed,
-            compat_records=compat_records,
-            cve_count=cve_count,
-            critical_cve_count=crit_cve_count,
-            policy_text=policy_text,
-            llm_url=args.llm_url,
-            use_live_llm=args.llm,
-        )
+            config = LLMConfig(base_url=args.llm_base_url)
 
-    if args.json:
-        print(json.dumps(decision_payload, indent=2, default=str))
-        return
+            if row.verdict != "no-go":
+                extra = generate_additional_caveats(
+                    cluster.name, cluster.ocp_version, args.target, row.reasons, config=config
+                )
+                if extra:
+                    log.info("LLM proposed %d additional caveat(s)", len(extra))
+                    augmented = apply_additional_caveats({"verdict": row.verdict, "reasons": row.reasons}, extra)
+                    row.verdict = augmented["verdict"]
+                    row.reasons = augmented["reasons"]
 
-    print("\n" + "=" * 70)
-    print(f"UPGRADE ASSESSMENT RESULT: {decision_payload['verdict']} [Mode: {decision_payload['evaluation_mode'].upper()}]")
-    print("=" * 70)
+            narrative = generate_narrative(cluster.name, cluster.ocp_version, args.target, row.reasons, config=config)
+            row.narrative = narrative
+            if narrative is None:
+                log.info("No LLM narrative attached (endpoint unreachable or failed validation)")
 
-    print("\n--- [EXECUTIVE SYNOPSIS] ---")
-    print(decision_payload["executive_synopsis"])
+        output = {
+            "cluster": cluster.name,
+            "target_version": args.target,
+            "verdict": row.verdict,
+            "reasons": row.reasons,
+            "narrative": getattr(row, "narrative", None),
+        }
 
-    blockers = decision_payload["reasons"].get("blockers", [])
-    if blockers:
-        print("\n--- [ESCALATION & BLOCKER TRIGGERS] ---")
-        for r in blockers:
-            print(f" • {r}")
-
-    print("\n--- [DEEP COMPONENT & STORAGE IMPACT] ---")
-    for k, v in decision_payload["impact_analysis"].items():
-        if k != "version_drift":
-            print(f" • {k.replace('_', ' ').upper()}: {v}")
-
-    print("\n--- [TESTOPS REMEDIATION & QUALIFICATION PLAN] ---")
-    for step in decision_payload["testops_remediation_plan"]:
-        print(f" Step {step['step']} [{step['phase']}]:")
-        print(f"   Action: {step['action']}")
-        print(f"   Gate:   {step['gate']}")
-
-    print("\n--- [HUMAN-IN-THE-LOOP SIGN-OFF GATE] ---")
-    print(f" Status: {decision_payload['human_in_the_loop_sign_off']['status']}")
-    print(f" Required Approvers: {', '.join(decision_payload['human_in_the_loop_sign_off']['required_approvers'])}")
-    print(" Checklist:")
-    for item in decision_payload["human_in_the_loop_sign_off"]["sign_off_checklist"]:
-        print(f"   {item}")
-
-    print("\n--- [UNIFIED DECISION JSON PAYLOAD] ---")
-    print(json.dumps(decision_payload, indent=2, default=str))
+    print(json.dumps(output, indent=2, default=str))
 
 
 if __name__ == "__main__":

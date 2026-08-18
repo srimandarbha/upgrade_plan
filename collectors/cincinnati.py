@@ -27,7 +27,6 @@ import logging
 import os
 
 import requests
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -119,9 +118,7 @@ def parse_edges(graph: dict, channel: str, arch: str) -> list[dict]:
 def upsert_edges(session: Session, rows: list[dict]) -> int:
     if not rows:
         return 0
-    dialect = session.get_bind().dialect.name
-    insert_fn = pg_insert if dialect == "postgresql" else sqlite_insert
-    stmt = insert_fn(UpgradeEdge).values(rows)
+    stmt = pg_insert(UpgradeEdge).values(rows)
     update_cols = {
         c: getattr(stmt.excluded, c)
         for c in rows[0]
