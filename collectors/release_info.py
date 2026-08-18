@@ -1,21 +1,12 @@
 """`oc adm release info` collector -> release_images table.
 
-Covers point 5/6 from your original pre-check doc for a disconnected
-environment: inspecting a mirrored release payload directly instead of
-scraping web pages. Two things intentionally kept separate:
+Inspects mirrored OpenShift release payloads. In disconnected / air-gapped
+environments, supply `--icsp-file` (or `--idms-file`) and `-a` (pull secret)
+to resolve digests against your internal mirror registry.
 
-- `-o json` gives a stable, well-known structure (an OpenShift release
-  payload's `references` field is literally an ImageStream) -- this is what
-  we parse and persist, as `release_images`, for feeding an image vulnerability
-  scanner per component.
-
-- `--commits <from> <to>` gives a human-readable component-by-component commit
-  diff. Its exact column layout isn't a documented/stable contract the way the
-  JSON output is, so this module surfaces the raw text for a human to read (or
-  paste into a PR description) rather than parsing it into DB rows -- for a
-  structured "what bugs did this fix" answer, cross-reference the
-  `redhat-errata` rows from redhat_security.py instead, since RHBA/RHSA
-  content is the actual source of truth for that.
+Two modes supported:
+- `-o json` gives the payload ImageStream references for `release_images` table.
+- `--commits <from> <to>` outputs human-readable commit and bug differences.
 """
 from __future__ import annotations
 
@@ -23,6 +14,7 @@ import argparse
 import json
 import logging
 import subprocess
+from pathlib import Path
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
@@ -33,19 +25,51 @@ from db.models import ReleaseImage
 log = logging.getLogger(__name__)
 
 
-def fetch_release_metadata(version: str, oc_binary: str = "oc") -> dict:
+def _build_mirror_flags(
+    pull_secret: str | Path | None = None,
+    icsp_file: str | Path | None = None,
+    idms_file: str | Path | None = None,
+) -> list[str]:
+    flags = []
+    if pull_secret:
+        flags.extend(["-a", str(pull_secret)])
+    if icsp_file:
+        flags.append(f"--icsp-file={icsp_file}")
+    if idms_file:
+        flags.append(f"--idms-file={idms_file}")
+    return flags
+
+
+def fetch_release_metadata(
+    version: str,
+    oc_binary: str = "oc",
+    pull_secret: str | Path | None = None,
+    icsp_file: str | Path | None = None,
+    idms_file: str | Path | None = None,
+) -> dict:
+    cmd = [oc_binary, "adm", "release", "info", version, "-o", "json"]
+    cmd.extend(_build_mirror_flags(pull_secret, icsp_file, idms_file))
     proc = subprocess.run(
-        [oc_binary, "adm", "release", "info", version, "-o", "json"],
+        cmd,
         capture_output=True, text=True, timeout=120,
     )
     proc.check_returncode()
     return json.loads(proc.stdout)
 
 
-def fetch_commits_raw(from_version: str, to_version: str, oc_binary: str = "oc") -> str:
-    """Human-readable component commit diff -- not parsed, just returned as text."""
+def fetch_commits_raw(
+    from_version: str,
+    to_version: str,
+    oc_binary: str = "oc",
+    pull_secret: str | Path | None = None,
+    icsp_file: str | Path | None = None,
+    idms_file: str | Path | None = None,
+) -> str:
+    """Human-readable component commit diff (works offline with ICSP/IDMS and local registry pullspec)."""
+    cmd = [oc_binary, "adm", "release", "info", from_version, to_version, "--commits"]
+    cmd.extend(_build_mirror_flags(pull_secret, icsp_file, idms_file))
     proc = subprocess.run(
-        [oc_binary, "adm", "release", "info", from_version, to_version, "--commits"],
+        cmd,
         capture_output=True, text=True, timeout=120,
     )
     proc.check_returncode()
@@ -74,7 +98,13 @@ def upsert_release_images(session: Session, rows: list[dict]) -> int:
     return len(rows)
 
 
-def collect(versions: list[str] | str | None = None, oc_binary: str = "oc") -> int:
+def collect(
+    versions: list[str] | str | None = None,
+    oc_binary: str = "oc",
+    pull_secret: str | Path | None = None,
+    icsp_file: str | Path | None = None,
+    idms_file: str | Path | None = None,
+) -> int:
     if not versions:
         log.info("No target release version provided for release-info collector; skipping.")
         return 0
@@ -85,7 +115,13 @@ def collect(versions: list[str] | str | None = None, oc_binary: str = "oc") -> i
     with get_session() as db:
         for version in versions:
             try:
-                metadata = fetch_release_metadata(version, oc_binary=oc_binary)
+                metadata = fetch_release_metadata(
+                    version,
+                    oc_binary=oc_binary,
+                    pull_secret=pull_secret,
+                    icsp_file=icsp_file,
+                    idms_file=idms_file,
+                )
             except (subprocess.CalledProcessError, FileNotFoundError, json.JSONDecodeError) as exc:
                 log.warning("release info failed for %s: %s", version, exc)
                 continue
@@ -95,10 +131,13 @@ def collect(versions: list[str] | str | None = None, oc_binary: str = "oc") -> i
 
 
 def main():
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     ap = argparse.ArgumentParser(description="Collect release image inventory via `oc adm release info`")
-    ap.add_argument("version", help="release payload version/pullspec to inspect")
+    ap.add_argument("version", help="release payload version/pullspec to inspect (e.g. registry.local:5000/ocp-release:4.22.8-x86_64)")
     ap.add_argument("--oc-binary", default="oc")
+    ap.add_argument("-a", "--pull-secret", help="path to local registry pull secret JSON")
+    ap.add_argument("--icsp-file", help="path to ImageContentSourcePolicy YAML file")
+    ap.add_argument("--idms-file", help="path to ImageDigestMirrorSet YAML file")
     ap.add_argument(
         "--commits-from", help="if set (with --commits-to), print the raw commit diff and exit"
     )
@@ -106,12 +145,27 @@ def main():
     args = ap.parse_args()
 
     if args.commits_from and args.commits_to:
-        print(fetch_commits_raw(args.commits_from, args.commits_to, oc_binary=args.oc_binary))
+        diff = fetch_commits_raw(
+            args.commits_from,
+            args.commits_to,
+            oc_binary=args.oc_binary,
+            pull_secret=args.pull_secret,
+            icsp_file=args.icsp_file,
+            idms_file=args.idms_file,
+        )
+        print(diff)
         return
 
-    n = collect(args.version, oc_binary=args.oc_binary)
+    n = collect(
+        args.version,
+        oc_binary=args.oc_binary,
+        pull_secret=args.pull_secret,
+        icsp_file=args.icsp_file,
+        idms_file=args.idms_file,
+    )
     log.info("Upserted %d release_images rows for %s", n, args.version)
 
 
 if __name__ == "__main__":
     main()
+

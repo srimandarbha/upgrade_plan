@@ -1,8 +1,11 @@
-# System Verification & Execution Proofs
+# [ARCHIVED] System Verification & Execution Proofs
+
+> [!WARNING]
+> **ARCHIVED DOCUMENTATION**: This document contains historical execution proofs and test runs from earlier milestones prior to the PostgreSQL exclusivity migration, Red Hat CSAF v2 ingestion, HashiCorp Vault backend, and GitOps fleet automation. For current architecture and instructions, refer to [README.md](README.md).
 
 **Project:** OpenShift Virtualization (OCV) Pre-Upgrade & Migration Assessment Agent  
 **Repository:** `srimandarbha/upgrade_plan`  
-**Generated At:** 2026-08-17  
+**Archived Status:** Historical Reference  
 
 This document provides audit-grade verification proofs across all four core architectural milestones:
 1. [Collector Pipeline Execution](#1-collector-pipeline-execution)

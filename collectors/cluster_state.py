@@ -44,9 +44,32 @@ COMPONENT_CSV_PATTERNS: dict[str, re.Pattern] = {
 }
 
 
-def load_api_clients(context: str | None = None, kubeconfig_path: str | None = None):
+def load_api_clients(
+    context: str | None = None,
+    kubeconfig_path: str | None = None,
+    api_url: str | None = None,
+    token: str | None = None,
+    ca_cert: str | None = None,
+    insecure: bool = True,
+):
+    """Load Kubernetes API client from kubeconfig or directly from ServiceAccount credentials."""
+    if token and api_url:
+        c = client.Configuration()
+        c.host = api_url.rstrip("/")
+        c.verify_ssl = not insecure if not ca_cert else True
+        if ca_cert:
+            import tempfile
+            ca_file = tempfile.NamedTemporaryFile(mode="w", suffix=".crt", delete=False)
+            ca_file.write(ca_cert)
+            ca_file.close()
+            c.ssl_ca_cert = ca_file.name
+        c.api_key = {"authorization": f"Bearer {token}"}
+        api_client = client.ApiClient(configuration=c)
+        return client.CustomObjectsApi(api_client=api_client)
+
     config.load_kube_config(config_file=kubeconfig_path, context=context)
     return client.CustomObjectsApi()
+
 
 
 def fetch_clusterversion(api: "client.CustomObjectsApi") -> dict:

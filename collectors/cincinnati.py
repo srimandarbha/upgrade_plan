@@ -132,11 +132,32 @@ def upsert_edges(session: Session, rows: list[dict]) -> int:
     return len(rows)
 
 
+def discover_active_channels(session: Session) -> list[str]:
+    """Dynamically discover channels needed by clusters currently in inventory."""
+    from db.models import Cluster
+    channels = set()
+    for c in session.query(Cluster).all():
+        if c.ocp_version:
+            parts = c.ocp_version.split(".")[:2]
+            if len(parts) == 2:
+                channels.add(f"stable-{parts[0]}.{parts[1]}")
+                try:
+                    next_minor = int(parts[1]) + 1
+                    channels.add(f"stable-{parts[0]}.{next_minor}")
+                    channels.add(f"stable-{parts[0]}.{next_minor + 1}")
+                except ValueError:
+                    pass
+    if not channels:
+        channels = {"stable-4.18", "stable-4.19", "stable-4.20", "stable-4.21", "stable-4.22", "stable-4.23"}
+    return sorted(channels)
+
+
 def collect(channels: list[str] | None = None, arch: str = "amd64", base_url: str | None = None) -> int:
-    channels = channels or DEFAULT_CHANNELS
     total = 0
     with get_session() as db:
-        for channel in channels:
+        target_channels = channels or discover_active_channels(db)
+        log.info("Collecting Cincinnati upgrade graphs for channels: %s", target_channels)
+        for channel in target_channels:
             try:
                 graph = fetch_graph(channel, arch=arch, base_url=base_url)
             except requests.RequestException as exc:
@@ -145,6 +166,7 @@ def collect(channels: list[str] | None = None, arch: str = "amd64", base_url: st
             rows = parse_edges(graph, channel, arch)
             total += upsert_edges(db, rows)
     return total
+
 
 
 def main():

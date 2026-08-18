@@ -56,13 +56,16 @@ db/
   postgres_seed_4.20_to_4.22.sql Complete PostgreSQL DDL + 4.20->4.22 seed dataset
   models.py                    SQLAlchemy models (PostgreSQL)
   db.py                        Engine & session factory, auto-loads .env
+vault/
+  client.py                    HashiCorp Vault client (Token/AppRole, KV v1/v2, SA synthesis)
 collectors/
-  redhat_security.py           CVE + CSAF/errata -> advisories
+  redhat_security.py           CSAF v2 VEX (CVEs) + Advisories (RHSAs) -> advisories
   lifecycle.py                 GA/EOL dates      -> product_lifecycle
   cincinnati.py                OSUS upgrade graph-> upgrade_edges
   vendor_matrix.py             Dell/Portworx/MTV -> operator_compat
-  cluster_state.py             Live cluster state-> component_versions
-  release_info.py              Release images    -> release_images
+  cluster_state.py             Live cluster state (SA or kubeconfig) -> component_versions
+  release_info.py              Mirrored payload images (ICSP/IDMS)   -> release_images
+  gitops_inventory.py          redhat-cop GitOps template mapping   -> clusters & component_versions
 scripts/
   load_postgres_seed.py        One-step loader for PostgreSQL disconnected DB seed
   bundle_project.py            Comprehensive project exporter / packager
@@ -75,83 +78,207 @@ data/
 engine/
   compatibility.py             Deterministic GO / GO-WITH-CAVEATS / NO-GO assessment engine
   llm_advisor.py               Strategic LLM & TestOps migration escalation advisor
-run_collectors.py              Orchestrator for all data collectors
-run_assessment.py              CLI entrypoint for running cluster compatibility assessments
+run_collectors.py              Orchestrator for all data collectors (Vault / GitOps / Mirroring)
+run_assessment.py              CLI entrypoint for 50+ cluster fleet upgrade assessments
 run_gitops_pr.py               CLI entrypoint for opening/updating GitOps upgrade PRs
 tests/                         Unit tests against saved fixtures (no live network needed)
 ```
 
 ---
 
-## Setup & Database Configuration
+## Secrets & Credentials Configuration (.env & HashiCorp Vault)
 
-### 1. Install Dependencies
-```bash
-python -m venv venv
-# On Linux/macOS:
-source venv/bin/activate
-# On Windows PowerShell:
-.\venv\Scripts\Activate.ps1
+The agent supports two backends for all credentials: **local `.env` file** and **HashiCorp Vault** (AppRole or Token).
 
-pip install -r requirements.txt
-```
-
-### 2. Configure `.env`
-Create a `.env` file in the root directory (or copy from `.env.example`):
+### 1. HashiCorp Vault Backend Setup
+Configure your Vault connection in `.env`:
 ```env
-# PostgreSQL connection URL
-DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:5432/ocv_agent
+VAULT_ADDR=https://vault.internal.net:8200
+VAULT_NAMESPACE=admin/ocp-fleet
 
-# Cincinnati/OSUS upgrade graph base URL
-# Bastion (public):   https://api.openshift.com
-# Disconnected (OSUS): http://<local-osus-route>
-CINCINNATI_URL=https://api.openshift.com
+# Option A: Token Auth
+VAULT_TOKEN=s.yourVaultTokenHere
 
-# Kubeconfig context for live cluster inspection
-KUBECONFIG=/etc/ocv-agent/kubeconfig
+# Option B: AppRole Auth
+VAULT_ROLE_ID=your-approle-role-id
+VAULT_SECRET_ID=your-approle-secret-id
 ```
 
-### 3. Initialize Database Tables
-Tables are created automatically on the first run, or you can apply the DDL directly:
+### 2. LLM Credentials Resolution
+Supports OpenAI-compatible LLM endpoints (llama.cpp, vLLM, Ollama, OpenAI, Azure):
+* **Backend A (`.env` file):**
+  ```env
+  LLM_BASE_URL=http://127.0.0.1:8080/v1/chat/completions
+  LLM_API_KEY=your-api-key-if-required
+  LLM_MODEL=meta-llama/Llama-3-70B-Instruct
+  ```
+* **Backend B (HashiCorp Vault):**
+  ```env
+  VAULT_LLM_SECRET_PATH=secret/data/llm
+  ```
+  *(Vault secret JSON contains `{"base_url": "...", "api_key": "...", "model": "..."}`)*
+
+### 3. Registry Mirror Pull Secrets Resolution
+Used by `release-info` to inspect mirrored release payloads in air-gapped networks:
+* **Backend A (`.env` or local path):**
+  ```env
+  PULL_SECRET_PATH=/etc/ocv-agent/mirror-pull-secret.json
+  ```
+* **Backend B (HashiCorp Vault):**
+  ```env
+  VAULT_PULL_SECRET_PATH=secret/data/registry/pull-secret
+  ```
+
+### 4. Cluster ServiceAccount User Credentials Resolution
+Used for live cluster pre-upgrade inspections without static kubeconfig files:
+* **Backend A (Multi-context Kubeconfig):**
+  ```env
+  KUBECONFIG=/etc/ocv-agent/kubeconfig
+  ```
+* **Backend B (HashiCorp Vault Dynamic ServiceAccount):**
+  ```env
+  VAULT_CLUSTER_CREDS_TEMPLATE=secret/data/clusters/{cluster}
+  ```
+  *(Vault secret JSON contains `{"token": "...", "server": "https://api...", "ca_cert": "..."}`)*
+
+
+---
+
+## End-to-End Fleet Workflow Wrapper (`run_fleet_workflow.py`)
+
+The `run_fleet_workflow.py` wrapper orchestrates corporate proxy configuration, pulls latest GitOps changes from Lab/Prod repositories, and triggers assessments across targeted clusters with TestOps Confluence governance:
+
+> [!IMPORTANT]
+> **Production Policy Gate:** Confluence migration policy validation is **strictly mandatory for all Production clusters**. Disabling Confluence (`--disable-confluence`) or TestOps reasoning (`--disable-testops`) is only permitted for initial seed **Lab / Non-Prod** clusters to perform sandbox pre-qualification before scheduling production upgrade windows.
+
 ```bash
-psql -U postgres -h localhost -d ocv_agent -f db/schema.sql
+# 1. Evaluate Lab/Staging seed clusters (Confluence exclusion permitted for first-time seed qualification):
+python run_fleet_workflow.py --env lab --target 4.22.8 --disable-confluence
+
+# 2. Evaluate Production clusters through corporate proxy (Confluence & TestOps strictly enforced):
+python run_fleet_workflow.py --env prod --target 4.22.8 \
+  --https-proxy http://proxy.corp.net:8080 \
+  --no-proxy localhost,127.0.0.1,.internal.net
+
+# 3. Evaluate entire 50+ cluster fleet:
+python run_fleet_workflow.py --env all --target 4.22.8
 ```
+
 
 ---
 
 ## Running Data Collectors
 
-The `run_collectors.py` orchestrator populates your database. You can run all collectors or select specific feeds:
+The `run_collectors.py` orchestrator populates your PostgreSQL database. You can run all collectors or select specific feeds:
 
-### Examples
+### Collector Feeds & Target Tables Reference
+
+| Collector Module | Source Data | Target Table | Network Requirement | What It Ingests |
+| :--- | :--- | :--- | :--- | :--- |
+| `gitops_inventory` | `redhat-cop` GitOps repository | `clusters`, `component_versions` | None (Local/Git) | Scans `clusters/<name>/` and `components/operators/` for `Subscription` CRDs (channel, startingCSV), mapping 50+ clusters. |
+| `redhat_security` | `security.access.redhat.com/data/csaf/v2/` | `advisories` | Bastion (or offline `--csaf-dir`) | CSAF 2.0 VEX (CVEs) and Advisories (RHSAs, RHBAs, RHEAs) for OCP & OCV components. |
+| `cincinnati` | OpenShift Update Service (OSUS) | `upgrade_edges` | Bastion or Disconnected OSUS route | Upgrade graph edges, blocked edges, and conditional update risk conditions. |
+| `lifecycle` | Red Hat Product Life Cycle API | `product_lifecycle` | Bastion | GA and End-of-Life (EOL) dates for OpenShift and OpenShift Virtualization. |
+| `vendor_matrix` | Verified matrix YAML (`data/vendor_matrix_seed.yaml`) | `operator_compat` | Local | Minimum and maximum supported OCP versions for **MTV (Forklift)**, **Dell CSM**, and **Portworx**. |
+| `release_info` | Mirrored container payload (`oc adm release info`) | `release_images` | Disconnected (Registry Mirror) | Component image pullspecs and digests using `--icsp-file` / `--idms-file` and pull secrets. |
+| `cluster_state` | Live Kubernetes CustomObjectsApi | `component_versions` | Disconnected (Cluster API) | Live fallback reading of `ClusterVersion` and healthy `ClusterServiceVersion` (CSVs) in `Succeeded` phase. |
+
+### Collector Invocation Examples
 
 ```bash
-# 1. Run all online collectors from connected Bastion:
-python run_collectors.py --only redhat-security,lifecycle,cincinnati
+# 1. Ingest 50+ cluster operator mappings from redhat-cop GitOps template repo:
+python run_collectors.py --only gitops-inventory --gitops-dir /path/to/gitops-standards-repo
 
-# 2. Pull Cincinnati graph for a specific channel (e.g., stable-4.22):
+# 2. Ingest Red Hat CSAF v2 VEX & Advisories (online or offline directory):
+python run_collectors.py --only redhat-security --csaf-dir /path/to/csaf-bundle/
+
+# 3. Pull registry mirror secret from HashiCorp Vault and inspect release payload:
+python run_collectors.py --only release-info \
+  --release-version registry.local:5000/ocp-release:4.22.8-x86_64 \
+  --vault-pull-secret-path secret/data/registry/pull-secret \
+  --icsp-file=/path/to/icsp.yaml
+
+# 4. Pull Cincinnati graph for a specific channel (e.g., stable-4.22):
 python run_collectors.py --only cincinnati --channel stable-4.22
 
-# 3. Pull security advisories with severity or date filters:
-python run_collectors.py --only redhat-security --severity critical --after 2026-01-01
-
-# 4. Ingest MTV, Dell CSM, and Portworx compatibility seed matrices:
+# 5. Ingest MTV, Dell CSM, and Portworx compatibility seed matrices:
 python run_collectors.py --only vendor-matrix
-
-# 5. Inspect mirrored release payload in air-gapped network:
-python run_collectors.py --only release-info --release-version 4.22.8
 ```
+
+---
+
+## How Cluster & Operator Mapping Works
+
+The agent maps your 50+ cluster fleet and installed operators using a two-tier approach:
+
+### 1. Primary Mapping: GitOps Repository (`collectors/gitops_inventory.py`)
+In enterprise disconnected environments, live network access to 50+ clusters simultaneously is often restricted. The agent crawls your GitOps repository ([`redhat-cop/gitops-standards-repo-template`](https://github.com/redhat-cop/gitops-standards-repo-template)):
+1. **Cluster Declarations:** Discovers cluster names and target versions from `clusters/<cluster_name>/` manifests (`ClusterCurator`, `ClusterDeployment`, `kustomization.yaml`).
+2. **Subscription CRDs:** Parses OLM operator subscriptions (`kind: Subscription`) under cluster overlays and shared `components/operators/`.
+3. **Canonical Normalization:** Maps raw subscription names to standard component keys:
+   - `kubevirt-hyperconverged-operator` $\rightarrow$ `ocv`
+   - `dell-csm-operator` $\rightarrow$ `dell-csm`
+   - `portworx-operator` $\rightarrow$ `portworx`
+   - `mtv-operator` / `forklift-operator` $\rightarrow$ `mtv`
+4. **PostgreSQL Batch Upsert:** Stores clusters in `clusters` and all operator versions/channels in `component_versions`.
+
+### 2. Secondary Live Fallback: Cluster API (`collectors/cluster_state.py`)
+If live cluster connectivity is available, the agent connects using ServiceAccount user credentials dynamically retrieved from HashiCorp Vault (`VAULT_CLUSTER_CREDS_TEMPLATE=secret/data/clusters/{cluster}`) or `KUBECONFIG` and directly inspects:
+- Active `ClusterVersion` object.
+- Installed `ClusterServiceVersion` (CSVs) in `status.phase == 'Succeeded'`.
+
+---
+
+## Where and How the LLM Advisor is Used
+
+The LLM layer (`engine/llm_advisor.py`) provides **strategic, multi-dimensional reasoning** on top of the deterministic rule engine.
+
+### Key Use Cases:
+1. **Major Version Architectural Drift (e.g. OCP 4 $\rightarrow$ 5):** Evaluates platform drift, deprecated API removals, and kernel re-certification requirements.
+2. **Active Migration Motive Analysis:** Protects ongoing VMware-to-OCV migrations (`mtv` / `forklift`) from disruption during platform upgrades.
+3. **CSI Storage Failover Gates:** Analyzes driver compatibility for Dell CSM (PowerStore/PowerFlex) and Portworx shared RWX volumes.
+4. **TestOps Confluence Policy Synthesis:** Translates corporate qualification policies (`TESTOPS-POL-4082`) into actionable step-by-step qualification plans.
+
+### Architectural Guardrails:
+* **Additive Only:** The LLM can escalate a verdict (e.g., moving `GO` $\rightarrow$ `NO-GO (ESCALATE)` or adding caveats), but it **CANNOT overturn a deterministic blocker**.
+* **Zero Hard Dependencies:** If no LLM endpoint is reachable, the built-in deterministic expert rule engine executes seamlessly with identical output schemas.
+* **Production Gate:** Confluence TestOps governance is strictly enforced for all Production clusters.
+
+---
+
 
 ---
 
 ## Running Pre-Upgrade Assessments
 
-Use `run_assessment.py` to evaluate whether a target OpenShift version is safe for a cluster.
+Use `run_assessment.py` to evaluate target OpenShift versions for single clusters or across an entire **50+ cluster fleet**:
 
-### 1. Deterministic Assessment (GO / NO-GO)
-Evaluates Cincinnati graph connectivity, conditional update risks, operator bounds, and EOL dates:
+### 1. Fleet-Wide 50+ Cluster Assessment
+Evaluates all clusters in the PostgreSQL database against target OCP version, operator bounds, and Cincinnati graph:
 ```bash
-python run_assessment.py --cluster east-prod-01 --target 4.22.8
+python run_assessment.py --all --target 4.22.8
+```
+
+#### Fleet Output Matrix:
+```text
+==============================================================================
+FLEET UPGRADE READINESS MATRIX: TARGET OCP 4.22.8
+Total Clusters: 52 | Ready (GO): 38 | Caveats: 10 | Blocked (NO-GO): 4
+==============================================================================
+CLUSTER                  | CURRENT    | VERDICT          | BLOCKERS / CAVEATS
+------------------------------------------------------------------------------
+east-prod-01             | 4.22.2     | GO               | Clean
+west-prod-02             | 4.21.14    | GO-WITH-CAVEATS  | 1 caveat(s)
+south-edge-03            | 4.20.0     | NO-GO            | 3 blocker(s)
+...
+==============================================================================
+```
+
+### 2. Single Cluster Assessment with Dynamic Vault Login
+Fetch cluster credentials dynamically from HashiCorp Vault for live pre-upgrade verification:
+```bash
+python run_assessment.py --cluster east-prod-01 --target 4.22.8 \
+  --vault-kubeconfig-path secret/data/clusters/{cluster}
 ```
 
 #### Sample Output:

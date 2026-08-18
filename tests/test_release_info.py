@@ -1,6 +1,24 @@
-from collectors.release_info import parse_release_images, upsert_release_images
+from collectors.release_info import (
+    _build_mirror_flags,
+    parse_release_images,
+    upsert_release_images,
+)
 from db.models import ReleaseImage
 from tests.utils import load_fixture
+
+
+def test_build_mirror_flags():
+    flags = _build_mirror_flags(
+        pull_secret="/path/to/pull-secret.json",
+        icsp_file="/path/to/icsp.yaml",
+        idms_file="/path/to/idms.yaml",
+    )
+    assert flags == [
+        "-a",
+        "/path/to/pull-secret.json",
+        "--icsp-file=/path/to/icsp.yaml",
+        "--idms-file=/path/to/idms.yaml",
+    ]
 
 
 def test_parse_release_images():
@@ -19,3 +37,4 @@ def test_upsert(db_session):
     db_session.commit()
     assert n == 2
     assert db_session.query(ReleaseImage).count() == 2
+

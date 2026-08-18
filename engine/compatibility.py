@@ -145,6 +145,11 @@ def assess(
                 )
             else:
                 info.append(f"Operator '{comp.component}' version {comp.version} verified compatible with {target_version}.")
+        else:
+            caveats.append(
+                f"Operator '{comp.component}' version {comp.version} has no recorded compatibility rule in operator_compat; manual vendor certification check advised."
+            )
+
 
     # 4. Check Red Hat Product Lifecycle (GA, Support, EOL)
     target_major_minor = ".".join(target_version.split(".")[:2])

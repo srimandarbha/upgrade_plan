@@ -22,17 +22,45 @@ log = logging.getLogger(__name__)
 DEFAULT_LLM_URL = "http://127.0.0.1:8080/v1/chat/completions"
 
 
+def resolve_llm_config(
+    llm_url: str | None = None,
+    api_key: str | None = None,
+    model_name: str | None = None,
+) -> tuple[str, str | None, str | None]:
+    """Resolve LLM URL, API Key, and Model from parameters, .env, or HashiCorp Vault."""
+    url = llm_url or os.environ.get("LLM_BASE_URL") or os.environ.get("LLM_URL")
+    key = api_key or os.environ.get("LLM_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    model = model_name or os.environ.get("LLM_MODEL")
+
+    # If missing URL or API key, attempt lookup in HashiCorp Vault
+    vault_path = os.environ.get("VAULT_LLM_SECRET_PATH")
+    if (not url or not key) and (os.environ.get("VAULT_ADDR") or vault_path):
+        try:
+            from vault.client import VaultClient
+            vc = VaultClient()
+            v_creds = vc.get_llm_credentials(vault_path or "secret/data/llm")
+            if v_creds:
+                url = url or v_creds.get("base_url")
+                key = key or v_creds.get("api_key")
+                model = model or v_creds.get("model")
+        except Exception as exc:
+            log.debug("Vault LLM config resolution skipped: %s", exc)
+
+    return url or DEFAULT_LLM_URL, key, model
+
+
 def query_local_llm(
     prompt: str,
     system_prompt: str | None = None,
     llm_url: str | None = None,
+    api_key: str | None = None,
     model_name: str | None = None,
     timeout: int = 90,
 ) -> str | None:
-    """Query OpenAI-compatible local LLM endpoint (e.g. llama.cpp / vLLM on localhost:8080)."""
+    """Query OpenAI-compatible LLM endpoint (.env or HashiCorp Vault backend)."""
     import requests
 
-    url = llm_url or os.environ.get("LLM_URL", DEFAULT_LLM_URL)
+    resolved_url, resolved_key, resolved_model = resolve_llm_config(llm_url, api_key, model_name)
     default_system = (
         "You are a Senior OpenShift Platform SRE and Virtualization Upgrade Specialist. "
         "Analyze the provided cluster facts, operator matrix (MTV, Dell CSM, Portworx), "
@@ -46,19 +74,24 @@ def query_local_llm(
         "max_tokens": 600,
         "temperature": 0.1,
     }
-    if model_name:
-        payload["model"] = model_name
+    if resolved_model:
+        payload["model"] = resolved_model
+
+    headers = {"Content-Type": "application/json"}
+    if resolved_key:
+        headers["Authorization"] = f"Bearer {resolved_key}"
 
     try:
-        resp = requests.post(url, json=payload, timeout=timeout)
+        resp = requests.post(resolved_url, json=payload, headers=headers, timeout=timeout)
         if resp.status_code == 200:
             data = resp.json()
             choices = data.get("choices", [])
             if choices:
                 return choices[0].get("message", {}).get("content", "").strip()
     except Exception as exc:
-        log.warning("Local LLM request to %s failed: %s (using expert rule engine)", url, exc)
+        log.warning("LLM request to %s failed: %s (using expert rule engine)", resolved_url, exc)
     return None
+
 
 
 def fetch_confluence_policy(
@@ -66,7 +99,7 @@ def fetch_confluence_policy(
     page_id: str | None = None,
     auth_token: str | None = None,
 ) -> str | None:
-    """Placeholder for future direct Confluence REST API ingestion."""
+    """Ingest TestOps qualification policy directly from Confluence REST API."""
     base_url = confluence_base_url or os.environ.get("CONFLUENCE_URL")
     pid = page_id or os.environ.get("CONFLUENCE_PAGE_ID")
     token = auth_token or os.environ.get("CONFLUENCE_API_TOKEN")
@@ -86,11 +119,12 @@ def fetch_confluence_policy(
     return None
 
 
-def load_testops_policy(file_path: str | None = None) -> str:
-    """Load TestOps policy (from Confluence API placeholder, custom file, or built-in defaults)."""
-    confluence_content = fetch_confluence_policy()
-    if confluence_content:
-        return confluence_content
+def load_testops_policy(file_path: str | None = None, enable_confluence: bool = True) -> str:
+    """Load TestOps policy (from Confluence REST API, custom file, or built-in defaults)."""
+    if enable_confluence and os.environ.get("ENABLE_CONFLUENCE", "true").lower() in ("true", "1", "yes"):
+        confluence_content = fetch_confluence_policy()
+        if confluence_content:
+            return confluence_content
 
     if file_path and os.path.exists(file_path):
         try:
